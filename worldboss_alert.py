@@ -61,8 +61,7 @@ def build_embed(event):
             f"**{boss['name']}**\n"
             f"Level {boss['level']}\n"
             f"Location: {boss['location']}\n\n"
-            f"Spawns: <t:{unix_ts}:F>\n"
-            f"Countdown: <t:{unix_ts}:R>"
+            f"Spawns: <t:{unix_ts}:R>"
         ),
         "color": 0x63D471,
         "image": {"url": boss["image_url"]},
