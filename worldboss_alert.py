@@ -12,8 +12,8 @@ DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 DEGEN_BEARER_TOKEN = os.environ.get("DEGEN_BEARER_TOKEN", "").strip()
 ROLE_ID = os.environ.get("WORLD_BOSS_ROLE_ID", "").strip()
 
-SEND_AT_MINUTES_BEFORE_SPAWN = 5
-LOOKAHEAD_MINUTES = 10
+SEND_AT_MINUTES_BEFORE_SPAWN = 645
+LOOKAHEAD_MINUTES = 1000
 
 HEADERS = {
     "accept": "application/json",
