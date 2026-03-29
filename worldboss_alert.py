@@ -47,12 +47,12 @@ def seconds_until_spawn(event):
     now = datetime.now(timezone.utc)
     return (spawn_at - now).total_seconds()
 
-def minutes_until_spawn(event):
-    return int(seconds_until_spawn(event) // 60)
+def spawn_unix(event):
+    return int(normalize_dt(event["scheduled_time"]).timestamp())
 
 def build_embed(event):
     boss = event["boss"]
-    mins = max(minutes_until_spawn(event), 0)
+    unix_ts = spawn_unix(event)
     scheduled_iso = normalize_dt(event["scheduled_time"]).astimezone(timezone.utc).isoformat()
 
     return {
@@ -61,7 +61,8 @@ def build_embed(event):
             f"**{boss['name']}**\n"
             f"Level {boss['level']}\n"
             f"Location: {boss['location']}\n\n"
-            f"Spawns in **{mins}m**"
+            f"Spawns: <t:{unix_ts}:F>\n"
+            f"Countdown: <t:{unix_ts}:R>"
         ),
         "color": 0x63D471,
         "image": {"url": boss["image_url"]},
