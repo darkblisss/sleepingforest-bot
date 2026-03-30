@@ -9,19 +9,27 @@ SCHEDULE_URL = "https://api-v1.degenidle.com/api/worldboss/schedule?limit=5"
 STATE_FILE = "worldboss_state.json"
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
-DEGEN_BEARER_TOKEN = os.environ.get("DEGEN_BEARER_TOKEN", "").strip()
 ROLE_ID = os.environ.get("WORLD_BOSS_ROLE_ID", "").strip()
 
 SEND_AT_MINUTES_BEFORE_SPAWN = 5
 LOOKAHEAD_MINUTES = 10
 
-HEADERS = {
-    "accept": "application/json",
-    "origin": "https://degenidle.com",
-    "referer": "https://degenidle.com/",
-    "authorization": f"Bearer {DEGEN_BEARER_TOKEN}",
-    "user-agent": "Mozilla/5.0"
-}
+def refresh_access_token():
+    refresh_token = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
+    if not refresh_token:
+        raise RuntimeError("Missing DEGEN_REFRESH_TOKEN")
+
+    r = requests.post(
+        "https://auth.degenidle.com/oauth2/token",
+        data={
+            "client_id": "c9563b2ef30348f182e122030ef28ad7",
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+        },
+        timeout=20
+    )
+    r.raise_for_status()
+    return r.json()["access_token"]
 
 def load_state():
     if not os.path.exists(STATE_FILE):
@@ -63,7 +71,7 @@ def build_embed(event):
             f"Location: {boss['location']}\n\n"
             f"Spawns: <t:{unix_ts}:R>"
         ),
-        "color": 0x63D471,
+        "color": 0x72AEED,
         "image": {"url": boss["image_url"]},
         "footer": {"text": "SleepingForest • DegenIdle"},
         "timestamp": scheduled_iso
@@ -72,8 +80,6 @@ def build_embed(event):
 def send_webhook(event):
     if not DISCORD_WEBHOOK_URL:
         raise RuntimeError("Missing DISCORD_WEBHOOK_URL")
-    if not DEGEN_BEARER_TOKEN:
-        raise RuntimeError("Missing DEGEN_BEARER_TOKEN")
 
     content = ""
     allowed_mentions = {"parse": []}
@@ -93,15 +99,22 @@ def send_webhook(event):
     r.raise_for_status()
 
 def main():
-    if not DEGEN_BEARER_TOKEN:
-        raise RuntimeError("Missing DEGEN_BEARER_TOKEN")
     if not DISCORD_WEBHOOK_URL:
         raise RuntimeError("Missing DISCORD_WEBHOOK_URL")
+
+    fresh_token = refresh_access_token()
+    headers = {
+        "accept": "application/json",
+        "origin": "https://degenidle.com",
+        "referer": "https://degenidle.com/",
+        "authorization": f"Bearer {fresh_token}",
+        "user-agent": "Mozilla/5.0"
+    }
 
     state = load_state()
     sent = set(state.get("sent", []))
 
-    r = requests.get(SCHEDULE_URL, headers=HEADERS, timeout=20)
+    r = requests.get(SCHEDULE_URL, headers=headers, timeout=20)
     r.raise_for_status()
     payload = r.json()
 
@@ -155,4 +168,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
