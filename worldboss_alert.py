@@ -84,7 +84,8 @@ def send_webhook(event):
     content = ""
     allowed_mentions = {"parse": []}
 
-    if ROLE_ID:
+    boss_level = event["boss"]["level"]
+    if ROLE_ID and boss_level <= 30:
         content = f"<@&{ROLE_ID}>"
         allowed_mentions = {"roles": [ROLE_ID]}
 
@@ -168,5 +169,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
