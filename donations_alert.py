@@ -1,12 +1,47 @@
 import os
 import json
+import base64
 import requests
 from datetime import datetime, timezone, timedelta
+from nacl import encoding, public
 
 DONATIONS_URL = "https://api-v1.degenidle.com/api/guilds/d08f77ef-fc13-4781-adce-0fcf88f9f77b/donations/daily?day=today&characterId=ee938e63-72e6-4b8e-82bf-672ca6e0a568"
 DISCORD_WEBHOOK_URL = os.environ.get("DONATIONS_WEBHOOK_URL", "").strip()
+ERROR_WEBHOOK_URL = os.environ.get("ERROR_WEBHOOK_URL", "").strip()
 FULL_DONATION_COUNT = 20
 MEMBERS_FILE = "members.json"
+GH_PAT = os.environ.get("GH_PAT", "").strip()
+GH_REPO = "darkblisss/donations-bot"
+
+def send_error_alert(message):
+    if ERROR_WEBHOOK_URL:
+        try:
+            requests.post(ERROR_WEBHOOK_URL, json={"content": f"⚠️ Donations Bot Error: {message}"}, timeout=10)
+        except Exception:
+            pass
+
+def update_github_secret(new_refresh_token):
+    if not GH_PAT:
+        return
+    try:
+        r = requests.get(
+            f"https://api.github.com/repos/{GH_REPO}/actions/secrets/public-key",
+            headers={"Authorization": f"Bearer {GH_PAT}"},
+            timeout=10
+        )
+        r.raise_for_status()
+        key_data = r.json()
+        public_key = public.PublicKey(key_data["key"].encode(), encoding.Base64Encoder)
+        box = public.SealedBox(public_key)
+        encrypted = base64.b64encode(box.encrypt(new_refresh_token.encode())).decode()
+        requests.put(
+            f"https://api.github.com/repos/{GH_REPO}/actions/secrets/DEGEN_REFRESH_TOKEN",
+            headers={"Authorization": f"Bearer {GH_PAT}"},
+            json={"encrypted_value": encrypted, "key_id": key_data["key_id"]},
+            timeout=10
+        )
+    except Exception as e:
+        send_error_alert(f"Failed to update GitHub secret: {e}")
 
 def load_members():
     if not os.path.exists(MEMBERS_FILE):
@@ -31,7 +66,11 @@ def refresh_access_token():
         timeout=20
     )
     r.raise_for_status()
-    return r.json()["access_token"]
+    data = r.json()
+    new_refresh = data.get("refresh_token")
+    if new_refresh:
+        update_github_secret(new_refresh)
+    return data["access_token"]
 
 def hours_until_reset():
     now = datetime.now(timezone.utc)
@@ -49,10 +88,8 @@ def build_embed(not_donated, used, cap, discord_map):
     lines.append(f"Total donations today: {used}/{cap} ({percent}%)")
     lines.append(f"{count} {member_word} not fully donated:")
     lines.append("")
-
     for m in not_donated:
         lines.append(f"• {m['character_name']}")
-
     lines.append("")
     lines.append(f"About {hours} hours until reset, please get your donations in.")
     lines.append("Need resources? Reach out for help!")
@@ -71,7 +108,12 @@ def main():
 
     discord_map = load_members()
 
-    fresh_token = refresh_access_token()
+    try:
+        fresh_token = refresh_access_token()
+    except Exception as e:
+        send_error_alert(f"Token refresh failed — update DEGEN_REFRESH_TOKEN in GitHub Secrets. Error: {e}")
+        raise
+
     headers = {
         "accept": "application/json",
         "origin": "https://degenidle.com",
