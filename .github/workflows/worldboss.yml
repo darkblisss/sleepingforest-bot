@@ -1,4 +1,4 @@
-name: Worldboss Alert
+name: World Boss Alert
 
 on:
   workflow_dispatch:
@@ -15,4 +15,7 @@ jobs:
       - run: python worldboss_alert.py
         env:
           DEGEN_REFRESH_TOKEN: ${{ secrets.DEGEN_REFRESH_TOKEN }}
-          WORLDBOSS_WEBHOOK_URL: ${{ secrets.WORLDBOSS_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          WORLD_BOSS_ROLE_ID: ${{ secrets.WORLD_BOSS_ROLE_ID }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          ERROR_WEBHOOK_URL: ${{ secrets.ERROR_WEBHOOK_URL }}
