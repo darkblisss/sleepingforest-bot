@@ -1,10 +1,6 @@
-name: World Boss Alert
+name: Worldboss Alert
 
 on:
-  schedule:
-    - cron: '55 5 * * *'   # 05:55 UTC
-    - cron: '55 13 * * *'  # 13:55 UTC
-    - cron: '55 21 * * *'  # 21:55 UTC
   workflow_dispatch:
 
 jobs:
@@ -19,7 +15,4 @@ jobs:
       - run: python worldboss_alert.py
         env:
           DEGEN_REFRESH_TOKEN: ${{ secrets.DEGEN_REFRESH_TOKEN }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          WORLD_BOSS_ROLE_ID: ${{ secrets.WORLD_BOSS_ROLE_ID }}
-          GH_PAT: ${{ secrets.GH_PAT }}
-          ERROR_WEBHOOK_URL: ${{ secrets.ERROR_WEBHOOK_URL }}
+          WORLDBOSS_WEBHOOK_URL: ${{ secrets.WORLDBOSS_WEBHOOK_URL }}
