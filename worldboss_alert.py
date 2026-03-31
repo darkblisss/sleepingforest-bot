@@ -2,17 +2,60 @@ import os
 import re
 import json
 import time
+import base64
 import requests
 from datetime import datetime, timezone
+from nacl import encoding, public
 
 SCHEDULE_URL = "https://api-v1.degenidle.com/api/worldboss/schedule?limit=5"
 STATE_FILE = "worldboss_state.json"
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 ROLE_ID = os.environ.get("WORLD_BOSS_ROLE_ID", "").strip()
+ERROR_WEBHOOK_URL = os.environ.get("ERROR_WEBHOOK_URL", "").strip()
+GH_PAT = os.environ.get("GH_PAT", "").strip()
+GH_REPO = "darkblisss/worldboss-bot"  # change if repo name differs
 
 SEND_AT_MINUTES_BEFORE_SPAWN = 5
 LOOKAHEAD_MINUTES = 10
+
+def send_error_alert(message):
+    if ERROR_WEBHOOK_URL:
+        try:
+            requests.post(
+                ERROR_WEBHOOK_URL,
+                json={"content": f"⚠️ Worldboss Bot Error: {message}"},
+                timeout=10,
+            )
+        except Exception:
+            pass
+
+def update_github_secret(new_refresh_token):
+    if not GH_PAT or not new_refresh_token:
+        return
+    try:
+        r = requests.get(
+            f"https://api.github.com/repos/{GH_REPO}/actions/secrets/public-key",
+            headers={"Authorization": f"Bearer {GH_PAT}"},
+            timeout=10,
+        )
+        r.raise_for_status()
+        key_data = r.json()
+        public_key = public.PublicKey(
+            key_data["key"].encode(), encoding.Base64Encoder
+        )
+        box = public.SealedBox(public_key)
+        encrypted = base64.b64encode(
+            box.encrypt(new_refresh_token.encode())
+        ).decode()
+        requests.put(
+            f"https://api.github.com/repos/{GH_REPO}/actions/secrets/DEGEN_REFRESH_TOKEN",
+            headers={"Authorization": f"Bearer {GH_PAT}"},
+            json={"encrypted_value": encrypted, "key_id": key_data["key_id"]},
+            timeout=10,
+        )
+    except Exception as e:
+        send_error_alert(f"Failed to update GitHub secret: {e}")
 
 def refresh_access_token():
     refresh_token = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
@@ -26,10 +69,14 @@ def refresh_access_token():
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
         },
-        timeout=20
+        timeout=20,
     )
     r.raise_for_status()
-    return r.json()["access_token"]
+    data = r.json()
+    new_refresh = data.get("refresh_token")
+    if new_refresh:
+        update_github_secret(new_refresh)
+    return data["access_token"]
 
 def load_state():
     if not os.path.exists(STATE_FILE):
@@ -46,7 +93,7 @@ def save_state(state):
 
 def normalize_dt(dt_str):
     s = dt_str.replace(" ", "T")
-    if re.search(r"[+-]\d{2}$", s):
+    if re.search(r"[+-]\\d{2}$", s):
         s += ":00"
     return datetime.fromisoformat(s)
 
@@ -61,7 +108,9 @@ def spawn_unix(event):
 def build_embed(event):
     boss = event["boss"]
     unix_ts = spawn_unix(event)
-    scheduled_iso = normalize_dt(event["scheduled_time"]).astimezone(timezone.utc).isoformat()
+    scheduled_iso = normalize_dt(event["scheduled_time"]).astimezone(
+        timezone.utc
+    ).isoformat()
 
     return {
         "title": "Bossing Alert",
@@ -74,7 +123,7 @@ def build_embed(event):
         "color": 0x72AEED,
         "image": {"url": boss["image_url"]},
         "footer": {"text": "SleepingForest • DegenIdle"},
-        "timestamp": scheduled_iso
+        "timestamp": scheduled_iso,
     }
 
 def send_webhook(event):
@@ -93,7 +142,7 @@ def send_webhook(event):
         "username": "SleepingForest Watch",
         "content": content,
         "embeds": [build_embed(event)],
-        "allowed_mentions": allowed_mentions
+        "allowed_mentions": allowed_mentions,
     }
 
     r = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=20)
@@ -103,13 +152,20 @@ def main():
     if not DISCORD_WEBHOOK_URL:
         raise RuntimeError("Missing DISCORD_WEBHOOK_URL")
 
-    fresh_token = refresh_access_token()
+    try:
+        fresh_token = refresh_access_token()
+    except Exception as e:
+        send_error_alert(
+            f"Token refresh failed — update DEGEN_REFRESH_TOKEN in GitHub Secrets. Error: {e}"
+        )
+        raise
+
     headers = {
         "accept": "application/json",
         "origin": "https://degenidle.com",
         "referer": "https://degenidle.com/",
         "authorization": f"Bearer {fresh_token}",
-        "user-agent": "Mozilla/5.0"
+        "user-agent": "Mozilla/5.0",
     }
 
     state = load_state()
@@ -133,7 +189,6 @@ def main():
         spawn_seconds = seconds_until_spawn(event)
         if spawn_seconds <= 0:
             continue
-
         if spawn_seconds <= LOOKAHEAD_MINUTES * 60:
             if best_spawn_seconds is None or spawn_seconds < best_spawn_seconds:
                 best_event = event
