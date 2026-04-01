@@ -14,7 +14,7 @@ DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 ROLE_ID = os.environ.get("WORLD_BOSS_ROLE_ID", "").strip()
 ERROR_WEBHOOK_URL = os.environ.get("ERROR_WEBHOOK_URL", "").strip()
 GH_PAT = os.environ.get("GH_PAT", "").strip()
-GH_REPO = "darkblisss/worldboss-bot"  # change if repo name differs
+GH_REPO = "darkblisss/worldboss-bot"
 
 SEND_AT_MINUTES_BEFORE_SPAWN = 5
 LOOKAHEAD_MINUTES = 10
@@ -32,6 +32,7 @@ def send_error_alert(message):
 
 def update_github_secret(new_refresh_token):
     if not GH_PAT or not new_refresh_token:
+        print("[DEBUG] update_github_secret: skipped — GH_PAT or new_refresh_token missing")
         return
     try:
         r = requests.get(
@@ -48,13 +49,15 @@ def update_github_secret(new_refresh_token):
         encrypted = base64.b64encode(
             box.encrypt(new_refresh_token.encode())
         ).decode()
-        requests.put(
+        put_response = requests.put(
             f"https://api.github.com/repos/{GH_REPO}/actions/secrets/DEGEN_REFRESH_TOKEN",
             headers={"Authorization": f"Bearer {GH_PAT}"},
             json={"encrypted_value": encrypted, "key_id": key_data["key_id"]},
             timeout=10,
         )
+        print(f"[DEBUG] update_github_secret: PUT response status = {put_response.status_code}")
     except Exception as e:
+        print(f"[DEBUG] update_github_secret: FAILED with error: {e}")
         send_error_alert(f"Failed to update GitHub secret: {e}")
 
 def refresh_access_token():
@@ -74,8 +77,16 @@ def refresh_access_token():
     r.raise_for_status()
     data = r.json()
     new_refresh = data.get("refresh_token")
+
+    print(f"[DEBUG] Keys returned by DEGEN: {list(data.keys())}")
+    print(f"[DEBUG] New refresh_token returned by DEGEN: {'YES' if new_refresh else 'NO'}")
+
     if new_refresh:
+        print("[DEBUG] Calling update_github_secret...")
         update_github_secret(new_refresh)
+    else:
+        print("[DEBUG] No new refresh_token from DEGEN — secret NOT updated")
+
     return data["access_token"]
 
 def load_state():
@@ -93,7 +104,7 @@ def save_state(state):
 
 def normalize_dt(dt_str):
     s = dt_str.replace(" ", "T")
-    if re.search(r"[+-]\\d{2}$", s):
+    if re.search(r"[+-]\d{2}$", s):
         s += ":00"
     return datetime.fromisoformat(s)
 
@@ -115,7 +126,7 @@ def build_embed(event):
     return {
         "title": "Bossing Alert",
         "description": (
-            f"**{boss['name']}**\n"
+            f"**{boss['name']}\n"
             f"Level {boss['level']}\n"
             f"Location: {boss['location']}\n\n"
             f"Spawns: <t:{unix_ts}:R>"
