@@ -32,40 +32,50 @@ def send_error_alert(message):
 
 def update_github_secret(new_refresh_token):
     if not GH_PAT or not new_refresh_token:
-        send_error_alert("GH_PAT or new_refresh_token missing — secret NOT updated")
+        send_error_alert("⛔ GH_PAT or new_refresh_token missing — secret NOT updated, chain will break in 24h")
         return
     repos = ["darkblisss/worldboss-bot", "darkblisss/donations-bot"]
     for repo in repos:
-        try:
-            r = requests.get(
-                f"https://api.github.com/repos/{repo}/actions/secrets/public-key",
-                headers={"Authorization": f"Bearer {GH_PAT}"},
-                timeout=10,
-            )
-            r.raise_for_status()
-            key_data = r.json()
-            public_key = public.PublicKey(
-                key_data["key"].encode(), encoding.Base64Encoder
-            )
-            box = public.SealedBox(public_key)
-            encrypted = base64.b64encode(
-                box.encrypt(new_refresh_token.encode())
-            ).decode()
-            put_r = requests.put(
-                f"https://api.github.com/repos/{repo}/actions/secrets/DEGEN_REFRESH_TOKEN",
-                headers={"Authorization": f"Bearer {GH_PAT}"},
-                json={"encrypted_value": encrypted, "key_id": key_data["key_id"]},
-                timeout=10,
-            )
-            if put_r.status_code not in (201, 204):
-                send_error_alert(f"Secret update for {repo} failed: status {put_r.status_code}")
-        except Exception as e:
-            send_error_alert(f"Failed to update secret for {repo}: {e}")
+        success = False
+        for attempt in range(3):
+            try:
+                r = requests.get(
+                    f"https://api.github.com/repos/{repo}/actions/secrets/public-key",
+                    headers={"Authorization": f"Bearer {GH_PAT}"},
+                    timeout=10,
+                )
+                r.raise_for_status()
+                key_data = r.json()
+                public_key = public.PublicKey(
+                    key_data["key"].encode(), encoding.Base64Encoder
+                )
+                box = public.SealedBox(public_key)
+                encrypted = base64.b64encode(
+                    box.encrypt(new_refresh_token.encode())
+                ).decode()
+                put_r = requests.put(
+                    f"https://api.github.com/repos/{repo}/actions/secrets/DEGEN_REFRESH_TOKEN",
+                    headers={"Authorization": f"Bearer {GH_PAT}"},
+                    json={"encrypted_value": encrypted, "key_id": key_data["key_id"]},
+                    timeout=10,
+                )
+                if put_r.status_code in (201, 204):
+                    success = True
+                    break
+                else:
+                    time.sleep(2)
+            except Exception:
+                time.sleep(2)
+        if not success:
+            send_error_alert(f"⛔ Failed to save new DEGEN_REFRESH_TOKEN to {repo} after 3 attempts — chain will break in 24h")
 
 def refresh_access_token():
     refresh_token = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
     if not refresh_token:
         raise RuntimeError("Missing DEGEN_REFRESH_TOKEN")
+
+    print(f"[TOKEN] Using refresh token ending in: ...{refresh_token[-4:]}")
+
     try:
         r = requests.post(
             "https://auth.degenidle.com/oauth2/token",
@@ -86,9 +96,12 @@ def refresh_access_token():
     data = r.json()
     new_refresh = data.get("refresh_token")
     if new_refresh:
+        print(f"[TOKEN] New refresh token ending in: ...{new_refresh[-4:]}")
+        same = new_refresh == refresh_token
+        print(f"[TOKEN] Token changed: {'NO — SAME TOKEN, rotation may be broken!' if same else 'YES — token rotated successfully'}")
         update_github_secret(new_refresh)
     else:
-        send_error_alert("DEGEN did not return a new refresh_token — rotation will break within 24h")
+        send_error_alert("⛔ DEGEN did not return a new refresh_token — rotation will break within 24h")
     return data["access_token"]
 
 def load_state():
