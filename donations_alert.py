@@ -22,29 +22,35 @@ def send_error_alert(message):
 
 def update_github_secret(new_refresh_token):
     if not GH_PAT or not new_refresh_token:
-        send_error_alert("GH_PAT or new_refresh_token missing — secret NOT updated, token rotation broken")
+        send_error_alert("GH_PAT or new_refresh_token missing — secret NOT updated")
         return
-    try:
-        r = requests.get(
-            f"https://api.github.com/repos/{GH_REPO}/actions/secrets/public-key",
-            headers={"Authorization": f"Bearer {GH_PAT}"},
-            timeout=10
-        )
-        r.raise_for_status()
-        key_data = r.json()
-        public_key = public.PublicKey(key_data["key"].encode(), encoding.Base64Encoder)
-        box = public.SealedBox(public_key)
-        encrypted = base64.b64encode(box.encrypt(new_refresh_token.encode())).decode()
-        put_r = requests.put(
-            f"https://api.github.com/repos/{GH_REPO}/actions/secrets/DEGEN_REFRESH_TOKEN",
-            headers={"Authorization": f"Bearer {GH_PAT}"},
-            json={"encrypted_value": encrypted, "key_id": key_data["key_id"]},
-            timeout=10
-        )
-        if put_r.status_code not in (201, 204):
-            send_error_alert(f"GitHub secret update failed with status {put_r.status_code} — token rotation may be broken")
-    except Exception as e:
-        send_error_alert(f"Failed to update GitHub secret: {e}")
+    repos = ["darkblisss/worldboss-bot", "darkblisss/donations-bot"]
+    for repo in repos:
+        try:
+            r = requests.get(
+                f"https://api.github.com/repos/{repo}/actions/secrets/public-key",
+                headers={"Authorization": f"Bearer {GH_PAT}"},
+                timeout=10,
+            )
+            r.raise_for_status()
+            key_data = r.json()
+            public_key = public.PublicKey(
+                key_data["key"].encode(), encoding.Base64Encoder
+            )
+            box = public.SealedBox(public_key)
+            encrypted = base64.b64encode(
+                box.encrypt(new_refresh_token.encode())
+            ).decode()
+            put_r = requests.put(
+                f"https://api.github.com/repos/{repo}/actions/secrets/DEGEN_REFRESH_TOKEN",
+                headers={"Authorization": f"Bearer {GH_PAT}"},
+                json={"encrypted_value": encrypted, "key_id": key_data["key_id"]},
+                timeout=10,
+            )
+            if put_r.status_code not in (201, 204):
+                send_error_alert(f"Secret update for {repo} failed: status {put_r.status_code}")
+        except Exception as e:
+            send_error_alert(f"Failed to update secret for {repo}: {e}")
 
 def load_members():
     if not os.path.exists(MEMBERS_FILE):
