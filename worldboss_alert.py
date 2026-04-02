@@ -32,6 +32,7 @@ def send_error_alert(message):
 
 def update_github_secret(new_refresh_token):
     if not GH_PAT or not new_refresh_token:
+        send_error_alert("GH_PAT or new_refresh_token missing — secret NOT updated, token rotation broken")
         return
     try:
         r = requests.get(
@@ -48,12 +49,14 @@ def update_github_secret(new_refresh_token):
         encrypted = base64.b64encode(
             box.encrypt(new_refresh_token.encode())
         ).decode()
-        requests.put(
+        put_r = requests.put(
             f"https://api.github.com/repos/{GH_REPO}/actions/secrets/DEGEN_REFRESH_TOKEN",
             headers={"Authorization": f"Bearer {GH_PAT}"},
             json={"encrypted_value": encrypted, "key_id": key_data["key_id"]},
             timeout=10,
         )
+        if put_r.status_code not in (201, 204):
+            send_error_alert(f"GitHub secret update failed with status {put_r.status_code} — token rotation may be broken")
     except Exception as e:
         send_error_alert(f"Failed to update GitHub secret: {e}")
 
@@ -61,20 +64,29 @@ def refresh_access_token():
     refresh_token = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
     if not refresh_token:
         raise RuntimeError("Missing DEGEN_REFRESH_TOKEN")
-    r = requests.post(
-        "https://auth.degenidle.com/oauth2/token",
-        data={
-            "client_id": "c9563b2ef30348f182e122030ef28ad7",
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-        },
-        timeout=20,
-    )
-    r.raise_for_status()
+    try:
+        r = requests.post(
+            "https://auth.degenidle.com/oauth2/token",
+            data={
+                "client_id": "c9563b2ef30348f182e122030ef28ad7",
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            },
+            timeout=20,
+        )
+        r.raise_for_status()
+    except Exception as e:
+        send_error_alert(
+            f"⛔ TOKEN EXPIRED — manually update DEGEN_REFRESH_TOKEN in GitHub Secrets for BOTH repos NOW. "
+            f"You have ~24h before donations bot also fails. Error: {e}"
+        )
+        raise
     data = r.json()
     new_refresh = data.get("refresh_token")
     if new_refresh:
         update_github_secret(new_refresh)
+    else:
+        send_error_alert("DEGEN did not return a new refresh_token — rotation will break within 24h")
     return data["access_token"]
 
 def load_state():
@@ -148,9 +160,6 @@ def main():
     try:
         fresh_token = refresh_access_token()
     except Exception as e:
-        send_error_alert(
-            f"Token refresh failed — update DEGEN_REFRESH_TOKEN in GitHub Secrets. Error: {e}"
-        )
         raise
     headers = {
         "accept": "application/json",
