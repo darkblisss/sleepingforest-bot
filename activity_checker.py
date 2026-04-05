@@ -30,14 +30,14 @@ REPOS = [
 def send_error_alert(message):
     if ERROR_WEBHOOK:
         try:
-            requests.post(ERROR_WEBHOOK, json={"content": f"⚠️ Activity Checker Error: {message}"}, timeout=10)
+            requests.post(ERROR_WEBHOOK, json={"content": f"Activity Warden Error: {message}"}, timeout=10)
         except Exception:
             pass
 
 
 def update_github_secret(new_refresh_token):
     if not GH_PAT or not new_refresh_token:
-        send_error_alert("⛔ GH_PAT or new_refresh_token missing — secret NOT updated")
+        send_error_alert("GH_PAT or new_refresh_token missing — secret NOT updated")
         return
     for repo in REPOS:
         success = False
@@ -67,7 +67,7 @@ def update_github_secret(new_refresh_token):
             except Exception:
                 time.sleep(2)
         if not success:
-            send_error_alert(f"⛔ Failed to save DEGEN_REFRESH_TOKEN to {repo} after 3 attempts")
+            send_error_alert(f"Failed to save DEGEN_REFRESH_TOKEN to {repo} after 3 attempts")
 
 
 def refresh_access_token():
@@ -89,7 +89,7 @@ def refresh_access_token():
         )
         r.raise_for_status()
     except Exception as e:
-        send_error_alert(f"⛔ TOKEN EXPIRED — manually update DEGEN_REFRESH_TOKEN in all GitHub Secrets. Error: {e}")
+        send_error_alert(f"TOKEN EXPIRED — manually update DEGEN_REFRESH_TOKEN in all GitHub Secrets. Error: {e}")
         raise
 
     data = r.json()
@@ -98,7 +98,7 @@ def refresh_access_token():
         print(f"[TOKEN] New refresh token ending in: ...{new_refresh[-4:]}")
         update_github_secret(new_refresh)
     else:
-        send_error_alert("⛔ No new refresh_token returned — rotation will break within 24h")
+        send_error_alert("No new refresh_token returned — rotation will break within 24h")
 
     return data["access_token"]
 
@@ -152,32 +152,50 @@ def send_discord_alert(inactive: list[str], checked_at: str):
         print("[WARN] DISCORD_WEBHOOK_URL not set — skipping webhook.")
         return
 
-    member_lines = "\n".join(f"• **{m}**" for m in inactive)
+    member_value = "\n".join(f"`{m}`" for m in inactive)
+
     embed = {
-        "title": "⚠️ Inactive Guild Members",
-        "description": (
-            f"The following **{len(inactive)}** member(s) had **no skill XP gains** "
-            f"since the last check:\n\n{member_lines}"
-        ),
-        "color": 0xFF4444,
-        "footer": {"text": f"Checked at {checked_at}"},
+        "title": "Inactive Guild Members",
+        "description": "The following members had no skill XP gains since the last check.",
+        "color": 0xC0392B,
+        "fields": [
+            {
+                "name": f"Members ({len(inactive)})",
+                "value": member_value,
+                "inline": False
+            }
+        ],
+        "footer": {"text": "SleepingForest • Warden"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
-    requests.post(WEBHOOK_URL, json={"username": "Activity Watcher", "embeds": [embed]}, timeout=10)
+
+    payload = {
+        "username": "SleepingForest Warden",
+        "embeds": [embed]
+    }
+
+    requests.post(WEBHOOK_URL, json=payload, timeout=10)
     print(f"[Discord] Alert sent — {len(inactive)} inactive.")
 
 
 def send_all_active(checked_at: str):
     if not WEBHOOK_URL:
         return
+
     embed = {
-        "title": "✅ All Members Active",
-        "description": "Every guild member has gained XP since the last check. All good!",
-        "color": 0x00CC66,
-        "footer": {"text": f"Checked at {checked_at}"},
+        "title": "All Members Active",
+        "description": "Every guild member has gained XP since the last check.",
+        "color": 0x27AE60,
+        "footer": {"text": "SleepingForest • Warden"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
-    requests.post(WEBHOOK_URL, json={"username": "Activity Watcher", "embeds": [embed]}, timeout=10)
+
+    payload = {
+        "username": "SleepingForest Warden",
+        "embeds": [embed]
+    }
+
+    requests.post(WEBHOOK_URL, json=payload, timeout=10)
 
 
 def main():
@@ -219,12 +237,12 @@ def main():
         if name in snapshots:
             prev   = snapshots[name]["skills"]
             gained = any(skills.get(s, 0) > prev.get(s, 0) for s in SKILLS)
-            label  = "✅ active" if gained else "❌ INACTIVE"
-            print(f"  {label:<12} {name}")
+            label  = "active" if gained else "INACTIVE"
+            print(f"  [{label}] {name}")
             if not gained:
                 inactive.append(name)
         else:
-            print(f"  [NEW]       {name} — baseline saved")
+            print(f"  [NEW]    {name} — baseline saved")
 
     save_snapshots(new_snapshots)
 
