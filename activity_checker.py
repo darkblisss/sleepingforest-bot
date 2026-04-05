@@ -6,14 +6,14 @@ import base64
 from datetime import datetime, timezone
 from nacl import encoding, public
 
-GUILD_ID      = "d08f77ef-fc13-4781-adce-0fcf88f9f77b"
-GUILD_API     = "https://api-v1.degenidle.com/api/guilds/character/ee938e63-72e6-4b8e-82bf-672ca6e0a568"
-PROFILE_API   = "https://api-v1.degenidle.com/api/characters/profile/{name}"
+GUILD_ID        = "d08f77ef-fc13-4781-adce-0fcf88f9f77b"
+GUILD_API       = "https://api-v1.degenidle.com/api/guilds/character/ee938e63-72e6-4b8e-82bf-672ca6e0a568"
+PROFILE_API     = "https://api-v1.degenidle.com/api/characters/profile/{name}"
 LEADERBOARD_API = "https://api-v1.degenidle.com/api/guilds/{guild_id}/donations/leaderboard?period=weekly&characterId=ee938e63-72e6-4b8e-82bf-672ca6e0a568"
-WEBHOOK_URL   = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
-ERROR_WEBHOOK = os.environ.get("ERROR_WEBHOOK_URL", "").strip()
-GH_PAT        = os.environ.get("GH_PAT", "").strip()
-SNAPSHOT_FILE = "snapshots.json"
+WEBHOOK_URL     = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
+ERROR_WEBHOOK   = os.environ.get("ERROR_WEBHOOK_URL", "").strip()
+GH_PAT          = os.environ.get("GH_PAT", "").strip()
+SNAPSHOT_FILE   = "snapshots.json"
 
 SKILLS = [
     "mining", "woodcutting", "tracking", "fishing", "gathering",
@@ -135,45 +135,21 @@ def get_guild_members(headers: dict) -> list[dict]:
 
 
 def get_weekly_donation_counts(headers: dict) -> dict[str, int]:
-    """Returns {character_name: total_donation_count} from the weekly leaderboard."""
+    """Returns {character_name: weekly_count} from the weekly leaderboard."""
     try:
         url = LEADERBOARD_API.format(guild_id=GUILD_ID)
         r = requests.get(url, headers=headers, timeout=15)
         r.raise_for_status()
         data = r.json()
 
-        # Debug on first call so we can verify key names
-        print(f"[Donations] Top-level keys: {list(data.keys())}")
-        print(f"[Donations] Sample: {json.dumps(data)[:800]}")
-
-        # Try common list keys
-        entries = (
-            data.get("leaderboard") or
-            data.get("data") or
-            data.get("entries") or
-            data.get("donations") or
-            []
-        )
-
         counts = {}
-        for entry in entries:
+        for entry in data.get("byMember") or []:
             if not isinstance(entry, dict):
                 continue
-            name = (
-                entry.get("character_name") or
-                entry.get("characterName") or
-                entry.get("name")
-            )
-            # Try common count keys
-            count = (
-                entry.get("total_count") or
-                entry.get("donation_count") or
-                entry.get("count") or
-                entry.get("total") or
-                0
-            )
+            name  = entry.get("character_name")
+            count = int(entry.get("count") or 0)
             if name:
-                counts[name] = int(count)
+                counts[name] = count
 
         print(f"[Donations] Weekly counts: {counts}")
         return counts
@@ -183,16 +159,23 @@ def get_weekly_donation_counts(headers: dict) -> dict[str, int]:
         return {}
 
 
-def format_avg_daily_donations(total_count: int, joined_at_str: str) -> str:
-    """Average donations per day since joining, capped to 7 days for weekly data."""
+def format_avg_daily_donations(weekly_count: int, joined_at_str: str) -> str:
+    """
+    Average donations per day since joining, capped to 7 days.
+    1 donation count = 200 gold or 50 of a resource.
+    dubz example: 60 count / 5 days in guild = 12
+    """
     try:
         joined = parse_joined_at(joined_at_str)
         if not joined:
             return "?"
         days_in_guild = (datetime.now(timezone.utc) - joined).total_seconds() / 86400
         days = max(1, min(7, days_in_guild))
-        avg = total_count / days
-        return str(round(avg, 1)).rstrip("0").rstrip(".")
+        avg  = weekly_count / days
+        # Round to nearest int, keep one decimal only if meaningful
+        if avg == int(avg):
+            return str(int(avg))
+        return str(round(avg, 1))
     except Exception:
         return "?"
 
@@ -263,17 +246,16 @@ def send_discord_alert(inactive: list[dict], last_check_ts: str):
 
     since = time_since(last_check_ts) if last_check_ts else "first check"
 
-    # Sort: longest inactive first, then lowest avg daily donations
+    # Sort: longest inactive first, then lowest avg donations
     inactive_sorted = sorted(
         inactive,
-        key=lambda x: (x["last_active_ts"], -x["avg_donations"])
+        key=lambda x: (x["last_active_ts"], x["avg_donations_raw"])
     )
 
     member_lines = []
     for entry in inactive_sorted:
         duration = format_inactive_duration(entry["last_active_ts"])
-        avg      = entry["avg_donations"]
-        member_lines.append(f"• {entry['name']} ({duration}) [{avg}]")
+        member_lines.append(f"• {entry['name']} ({duration}) [{entry['avg_donations']}]")
 
     embed = {
         "title": "Inactive Guild Members",
@@ -358,8 +340,12 @@ def main():
         prev_streak      = prev_data.get("inactive_streak", 0)
         prev_last_active = prev_data.get("last_active_ts", now_iso)
 
-        weekly_count = donation_counts.get(name, 0)
-        avg_donations = format_avg_daily_donations(weekly_count, joined_at)
+        weekly_count  = donation_counts.get(name, 0)
+        avg_str       = format_avg_daily_donations(weekly_count, joined_at)
+        try:
+            avg_raw = float(avg_str)
+        except Exception:
+            avg_raw = 0.0
 
         if prev_skills:
             gained = any(skills.get(s, 0) > prev_skills.get(s, 0) for s in SKILLS)
@@ -371,12 +357,13 @@ def main():
                 streak      = prev_streak + 1
                 last_active = prev_last_active
                 duration    = format_inactive_duration(last_active)
-                print(f"  [INACTIVE ×{streak}]  {name} — {duration} [{avg_donations}]")
+                print(f"  [INACTIVE ×{streak}]  {name} — {duration} [{avg_str}]")
                 inactive.append({
-                    "name":           name,
-                    "streak":         streak,
-                    "last_active_ts": last_active,
-                    "avg_donations":  float(avg_donations) if avg_donations not in ("?", "") else 0.0
+                    "name":             name,
+                    "streak":           streak,
+                    "last_active_ts":   last_active,
+                    "avg_donations":    avg_str,
+                    "avg_donations_raw": avg_raw
                 })
         else:
             streak      = 0
