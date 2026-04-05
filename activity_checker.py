@@ -108,10 +108,8 @@ def get_guild_members(headers: dict) -> list[str]:
     r.raise_for_status()
     data = r.json()
 
-    characters = data.get("members") or []
-
     names = []
-    for char in characters:
+    for char in data.get("members") or []:
         if isinstance(char, dict):
             name = char.get("character_name")
             if name:
@@ -147,55 +145,70 @@ def save_snapshots(snapshots: dict):
     print(f"[Snapshots] Saved {len(snapshots)} members.")
 
 
-def send_discord_alert(inactive: list[str], checked_at: str):
+def time_since(iso_str: str) -> str:
+    try:
+        last = datetime.fromisoformat(iso_str)
+        delta = datetime.now(timezone.utc) - last
+        hours = int(delta.total_seconds() // 3600)
+        minutes = int((delta.total_seconds() % 3600) // 60)
+        if hours > 0:
+            return f"{hours}h {minutes}m"
+        return f"{minutes}m"
+    except Exception:
+        return "unknown"
+
+
+def send_discord_alert(inactive: list[tuple[str, int]], last_check_ts: str):
     if not WEBHOOK_URL:
         print("[WARN] DISCORD_WEBHOOK_URL not set — skipping webhook.")
         return
 
-    member_value = "\n".join(f"`{m}`" for m in inactive)
+    since = time_since(last_check_ts) if last_check_ts else "first check"
+
+    member_lines = []
+    for name, streak in inactive:
+        if streak > 1:
+            member_lines.append(f"• {name} (×{streak})")
+        else:
+            member_lines.append(f"• {name}")
 
     embed = {
         "title": "Inactive Guild Members",
-        "description": "The following members had no skill XP gains since the last check.",
+        "description": (
+            f"The following **{len(inactive)}** member(s) had no skill XP gains "
+            f"since the last check **({since} ago)**."
+        ),
         "color": 0xC0392B,
         "fields": [
             {
                 "name": f"Members ({len(inactive)})",
-                "value": member_value,
+                "value": "\n".join(member_lines),
                 "inline": False
             }
         ],
-        "footer": {"text": "SleepingForest • Warden"},
+        "footer": {"text": "SleepingForest"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
-    payload = {
-        "username": "SleepingForest Warden",
-        "embeds": [embed]
-    }
-
-    requests.post(WEBHOOK_URL, json=payload, timeout=10)
+    requests.post(WEBHOOK_URL, json={"username": "SleepingForest Warden", "embeds": [embed]}, timeout=10)
     print(f"[Discord] Alert sent — {len(inactive)} inactive.")
 
 
-def send_all_active(checked_at: str):
+def send_all_active(last_check_ts: str):
     if not WEBHOOK_URL:
         return
 
+    since = time_since(last_check_ts) if last_check_ts else "first check"
+
     embed = {
         "title": "All Members Active",
-        "description": "Every guild member has gained XP since the last check.",
+        "description": f"Every guild member gained XP since the last check **({since} ago)**.",
         "color": 0x27AE60,
-        "footer": {"text": "SleepingForest • Warden"},
+        "footer": {"text": "SleepingForest"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
-    payload = {
-        "username": "SleepingForest Warden",
-        "embeds": [embed]
-    }
-
-    requests.post(WEBHOOK_URL, json=payload, timeout=10)
+    requests.post(WEBHOOK_URL, json={"username": "SleepingForest Warden", "embeds": [embed]}, timeout=10)
 
 
 def main():
@@ -212,37 +225,46 @@ def main():
         "user-agent": "Mozilla/5.0",
     }
 
-    snapshots = load_snapshots()
-    members   = get_guild_members(headers)
+    snapshots     = load_snapshots()
+    last_check_ts = snapshots.get("_last_run")
+    members       = get_guild_members(headers)
 
     if not members:
         print("[ABORT] No members found.")
         return
 
-    new_snapshots = {}
+    new_snapshots = {"_last_run": datetime.now(timezone.utc).isoformat()}
     inactive      = []
-    is_first_run  = len(snapshots) == 0
+    is_first_run  = not any(k != "_last_run" for k in snapshots)
 
     for name in members:
         skills = get_character_skills(name, headers)
         if skills is None:
-            print(f"  [SKIP]      {name}")
+            print(f"  [SKIP]    {name}")
+            if name in snapshots:
+                new_snapshots[name] = snapshots[name]
             continue
 
-        new_snapshots[name] = {
-            "skills":    skills,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+        prev_data   = snapshots.get(name, {})
+        prev_skills = prev_data.get("skills", {})
+        prev_streak = prev_data.get("inactive_streak", 0)
 
-        if name in snapshots:
-            prev   = snapshots[name]["skills"]
-            gained = any(skills.get(s, 0) > prev.get(s, 0) for s in SKILLS)
-            label  = "active" if gained else "INACTIVE"
+        if prev_skills:
+            gained = any(skills.get(s, 0) > prev_skills.get(s, 0) for s in SKILLS)
+            streak = 0 if gained else prev_streak + 1
+            label  = "active" if gained else f"INACTIVE ×{streak}"
             print(f"  [{label}] {name}")
             if not gained:
-                inactive.append(name)
+                inactive.append((name, streak))
         else:
-            print(f"  [NEW]    {name} — baseline saved")
+            streak = 0
+            print(f"  [NEW]     {name} — baseline saved")
+
+        new_snapshots[name] = {
+            "skills":          skills,
+            "timestamp":       datetime.now(timezone.utc).isoformat(),
+            "inactive_streak": streak
+        }
 
     save_snapshots(new_snapshots)
 
@@ -251,10 +273,10 @@ def main():
         return
 
     if inactive:
-        send_discord_alert(inactive, checked_at)
+        send_discord_alert(inactive, last_check_ts)
     else:
         print("\n[INFO] All active — no alert needed.")
-        send_all_active(checked_at)
+        send_all_active(last_check_ts)
 
 
 if __name__ == "__main__":
