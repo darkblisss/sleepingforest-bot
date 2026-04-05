@@ -34,7 +34,7 @@ def update_github_secret(new_refresh_token):
     if not GH_PAT or not new_refresh_token:
         send_error_alert("⛔ GH_PAT or new_refresh_token missing — secret NOT updated, chain will break in 24h")
         return
-    repos = ["darkblisss/worldboss-bot", "darkblisss/donations-bot"]
+    repos = ["darkblisss/worldboss-bot", "darkblisss/donations-bot", "darkblisss/guild-activity-checker"]
     for repo in repos:
         success = False
         for attempt in range(3):
