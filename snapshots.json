@@ -8,26 +8,26 @@
       "gathering": 1160682,
       "herbalism": 0,
       "forging": 0,
-      "leatherworking": 2868819,
+      "leatherworking": 2869486,
       "tailoring": 1164855,
       "crafting": 600,
       "cooking": 0,
       "alchemy": 0,
       "combat": 2377313,
       "woodcrafting": 0,
-      "dungeoneering": 401822,
+      "dungeoneering": 402387,
       "bloomtide": 0,
       "bossing": 42888,
       "exorcism": 0,
       "tinkering": 5702
     },
-    "timestamp": "2026-04-05T03:31:21.423064+00:00"
+    "timestamp": "2026-04-05T03:47:42.887555+00:00"
   },
   "DanteSylens0": {
     "skills": {
       "mining": 35149,
       "woodcutting": 19116,
-      "tracking": 149171,
+      "tracking": 149523,
       "fishing": 0,
       "gathering": 48697,
       "herbalism": 0,
@@ -45,11 +45,11 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-04-05T03:31:21.576901+00:00"
+    "timestamp": "2026-04-05T03:47:42.990544+00:00"
   },
   "HokageJoyboy": {
     "skills": {
-      "mining": 173976,
+      "mining": 174052,
       "woodcutting": 80607,
       "tracking": 115732,
       "fishing": 205926,
@@ -69,13 +69,13 @@
       "exorcism": 0,
       "tinkering": 14726
     },
-    "timestamp": "2026-04-05T03:31:21.853323+00:00"
+    "timestamp": "2026-04-05T03:47:43.112103+00:00"
   },
   "Judgement": {
     "skills": {
       "mining": 245897,
       "woodcutting": 0,
-      "tracking": 2464830,
+      "tracking": 2465533,
       "fishing": 0,
       "gathering": 495256,
       "herbalism": 0,
@@ -85,7 +85,7 @@
       "crafting": 0,
       "cooking": 0,
       "alchemy": 0,
-      "combat": 2039752,
+      "combat": 2040152,
       "woodcrafting": 0,
       "dungeoneering": 1440,
       "bloomtide": 0,
@@ -93,7 +93,7 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-04-05T03:31:22.006249+00:00"
+    "timestamp": "2026-04-05T03:47:43.228647+00:00"
   },
   "Lumina": {
     "skills": {
@@ -117,7 +117,7 @@
       "exorcism": 0,
       "tinkering": 5711
     },
-    "timestamp": "2026-04-05T03:31:22.281801+00:00"
+    "timestamp": "2026-04-05T03:47:43.352829+00:00"
   },
   "Madeira": {
     "skills": {
@@ -127,11 +127,11 @@
       "fishing": 30400,
       "gathering": 17719,
       "herbalism": 21150,
-      "forging": 10417,
+      "forging": 10463,
       "leatherworking": 325,
       "tailoring": 5728,
       "crafting": 0,
-      "cooking": 15200,
+      "cooking": 15252,
       "alchemy": 55511,
       "combat": 15132,
       "woodcrafting": 0,
@@ -141,7 +141,7 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-04-05T03:31:22.427862+00:00"
+    "timestamp": "2026-04-05T03:47:43.463714+00:00"
   },
   "Kroznak": {
     "skills": {
@@ -165,7 +165,7 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-04-05T03:31:22.704943+00:00"
+    "timestamp": "2026-04-05T03:47:43.581879+00:00"
   },
   "TysonFuri": {
     "skills": {
@@ -189,7 +189,7 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-04-05T03:31:22.846542+00:00"
+    "timestamp": "2026-04-05T03:47:43.707887+00:00"
   },
   "Lilas": {
     "skills": {
@@ -208,12 +208,12 @@
       "combat": 8400,
       "woodcrafting": 0,
       "dungeoneering": 7620,
-      "bloomtide": 13657,
+      "bloomtide": 13711,
       "bossing": 5940,
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-04-05T03:31:23.122557+00:00"
+    "timestamp": "2026-04-05T03:47:43.818925+00:00"
   },
   "Shinzo": {
     "skills": {
@@ -231,13 +231,13 @@
       "alchemy": 274,
       "combat": 8913,
       "woodcrafting": 294,
-      "dungeoneering": 4260,
+      "dungeoneering": 4380,
       "bloomtide": 8456,
       "bossing": 960,
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-04-05T03:31:23.383294+00:00"
+    "timestamp": "2026-04-05T03:47:43.941827+00:00"
   },
   "dubz": {
     "skills": {
@@ -261,13 +261,13 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-04-05T03:31:23.527530+00:00"
+    "timestamp": "2026-04-05T03:47:44.062488+00:00"
   },
   "Harriet": {
     "skills": {
       "mining": 383578,
       "woodcutting": 6738,
-      "tracking": 52563,
+      "tracking": 52647,
       "fishing": 253197,
       "gathering": 63691,
       "herbalism": 38607,
@@ -285,7 +285,7 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-04-05T03:31:23.668987+00:00"
+    "timestamp": "2026-04-05T03:47:44.260980+00:00"
   },
   "SOSxREKT": {
     "skills": {
@@ -304,16 +304,16 @@
       "combat": 13185,
       "woodcrafting": 500,
       "dungeoneering": 13380,
-      "bloomtide": 21423,
+      "bloomtide": 21488,
       "bossing": 1920,
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-04-05T03:31:23.818241+00:00"
+    "timestamp": "2026-04-05T03:47:44.370218+00:00"
   },
   "Stranded": {
     "skills": {
-      "mining": 4811,
+      "mining": 4877,
       "woodcutting": 2507,
       "tracking": 1521,
       "fishing": 0,
@@ -333,7 +333,7 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-04-05T03:31:23.978198+00:00"
+    "timestamp": "2026-04-05T03:47:44.483431+00:00"
   },
   "Nocturna": {
     "skills": {
@@ -347,9 +347,9 @@
       "leatherworking": 93,
       "tailoring": 0,
       "crafting": 0,
-      "cooking": 902,
+      "cooking": 979,
       "alchemy": 0,
-      "combat": 6223,
+      "combat": 6308,
       "woodcrafting": 3807,
       "dungeoneering": 1680,
       "bloomtide": 0,
@@ -357,7 +357,7 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-04-05T03:31:24.246256+00:00"
+    "timestamp": "2026-04-05T03:47:44.586621+00:00"
   },
   "zHiddenShotz": {
     "skills": {
@@ -381,11 +381,11 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-04-05T03:31:24.398205+00:00"
+    "timestamp": "2026-04-05T03:47:44.700273+00:00"
   },
   "Icydarknez": {
     "skills": {
-      "mining": 7925,
+      "mining": 7990,
       "woodcutting": 20,
       "tracking": 1400,
       "fishing": 2221,
@@ -405,6 +405,6 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-04-05T03:31:24.625211+00:00"
+    "timestamp": "2026-04-05T03:47:44.925422+00:00"
   }
 }
