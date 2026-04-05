@@ -108,10 +108,16 @@ def get_guild_members(headers: dict) -> list[str]:
     r.raise_for_status()
     data = r.json()
 
+    print(f"[DEBUG] Top-level keys: {list(data.keys())}")
+    print(f"[DEBUG] Full response: {json.dumps(data)[:3000]}")
+
+    # Check all likely locations for the members list
     characters = (
         data.get("characters") or
         data.get("members") or
         data.get("data") or
+        (data.get("guild") or {}).get("characters") or
+        (data.get("guild") or {}).get("members") or
         []
     )
 
@@ -127,10 +133,6 @@ def get_guild_members(headers: dict) -> list[str]:
                 names.append(name)
 
     print(f"[Guild] Found {len(names)} members: {names}")
-
-    if not names:
-        print(f"[DEBUG] Raw response: {str(data)[:500]}")
-
     return names
 
 
