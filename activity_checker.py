@@ -145,6 +145,27 @@ def save_snapshots(snapshots: dict):
     print(f"[Snapshots] Saved {len(snapshots)} members.")
 
 
+def format_inactive_duration(iso_str: str) -> str:
+    """Format time since last active. Hours up to 239h, then days from 10d."""
+    try:
+        last = datetime.fromisoformat(iso_str)
+        delta = datetime.now(timezone.utc) - last
+        total_seconds = int(delta.total_seconds())
+        total_minutes = total_seconds // 60
+        total_hours   = total_seconds // 3600
+        total_days    = total_seconds // 86400
+
+        if total_hours >= 240:
+            return f"{total_days}d"
+        elif total_hours >= 1:
+            mins = (total_seconds % 3600) // 60
+            return f"{total_hours}h {mins}m"
+        else:
+            return f"{total_minutes}m"
+    except Exception:
+        return "unknown"
+
+
 def time_since(iso_str: str) -> str:
     try:
         last = datetime.fromisoformat(iso_str)
@@ -158,19 +179,20 @@ def time_since(iso_str: str) -> str:
         return "unknown"
 
 
-def send_discord_alert(inactive: list[tuple[str, int]], last_check_ts: str):
+def send_discord_alert(inactive: list[dict], last_check_ts: str):
     if not WEBHOOK_URL:
         print("[WARN] DISCORD_WEBHOOK_URL not set — skipping webhook.")
         return
 
     since = time_since(last_check_ts) if last_check_ts else "first check"
 
+    # Sort by longest inactive first
+    inactive_sorted = sorted(inactive, key=lambda x: x["last_active_ts"])
+
     member_lines = []
-    for name, streak in inactive:
-        if streak > 1:
-            member_lines.append(f"• {name} (×{streak})")
-        else:
-            member_lines.append(f"• {name}")
+    for entry in inactive_sorted:
+        duration = format_inactive_duration(entry["last_active_ts"])
+        member_lines.append(f"• {entry['name']} (inactive {duration})")
 
     embed = {
         "title": "Inactive Guild Members",
@@ -181,7 +203,7 @@ def send_discord_alert(inactive: list[tuple[str, int]], last_check_ts: str):
         "color": 0xC0392B,
         "fields": [
             {
-                "name": f"Members ({len(inactive)})",
+                "name": f"Members ({len(inactive)}) — longest inactive first",
                 "value": "\n".join(member_lines),
                 "inline": False
             }
@@ -233,7 +255,8 @@ def main():
         print("[ABORT] No members found.")
         return
 
-    new_snapshots = {"_last_run": datetime.now(timezone.utc).isoformat()}
+    now_iso       = datetime.now(timezone.utc).isoformat()
+    new_snapshots = {"_last_run": now_iso}
     inactive      = []
     is_first_run  = not any(k != "_last_run" for k in snapshots)
 
@@ -245,25 +268,37 @@ def main():
                 new_snapshots[name] = snapshots[name]
             continue
 
-        prev_data   = snapshots.get(name, {})
-        prev_skills = prev_data.get("skills", {})
-        prev_streak = prev_data.get("inactive_streak", 0)
+        prev_data        = snapshots.get(name, {})
+        prev_skills      = prev_data.get("skills", {})
+        prev_streak      = prev_data.get("inactive_streak", 0)
+        prev_last_active = prev_data.get("last_active_ts", now_iso)
 
         if prev_skills:
             gained = any(skills.get(s, 0) > prev_skills.get(s, 0) for s in SKILLS)
-            streak = 0 if gained else prev_streak + 1
-            label  = "active" if gained else f"INACTIVE ×{streak}"
-            print(f"  [{label}] {name}")
-            if not gained:
-                inactive.append((name, streak))
+            if gained:
+                streak      = 0
+                last_active = now_iso
+                print(f"  [active]        {name}")
+            else:
+                streak      = prev_streak + 1
+                last_active = prev_last_active
+                duration    = format_inactive_duration(last_active)
+                print(f"  [INACTIVE ×{streak}]  {name} — last active {duration} ago")
+                inactive.append({
+                    "name":           name,
+                    "streak":         streak,
+                    "last_active_ts": last_active
+                })
         else:
-            streak = 0
-            print(f"  [NEW]     {name} — baseline saved")
+            streak      = 0
+            last_active = now_iso
+            print(f"  [NEW]           {name} — baseline saved")
 
         new_snapshots[name] = {
             "skills":          skills,
-            "timestamp":       datetime.now(timezone.utc).isoformat(),
-            "inactive_streak": streak
+            "timestamp":       now_iso,
+            "inactive_streak": streak,
+            "last_active_ts":  last_active
         }
 
     save_snapshots(new_snapshots)
