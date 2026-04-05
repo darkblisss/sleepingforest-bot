@@ -108,27 +108,12 @@ def get_guild_members(headers: dict) -> list[str]:
     r.raise_for_status()
     data = r.json()
 
-    print(f"[DEBUG] Top-level keys: {list(data.keys())}")
-    print(f"[DEBUG] Full response: {json.dumps(data)[:3000]}")
-
-    # Check all likely locations for the members list
-    characters = (
-        data.get("characters") or
-        data.get("members") or
-        data.get("data") or
-        (data.get("guild") or {}).get("characters") or
-        (data.get("guild") or {}).get("members") or
-        []
-    )
+    characters = data.get("members") or []
 
     names = []
     for char in characters:
         if isinstance(char, dict):
-            name = (
-                char.get("name") or
-                char.get("characterName") or
-                (char.get("character") or {}).get("name")
-            )
+            name = char.get("character_name")
             if name:
                 names.append(name)
 
@@ -213,7 +198,7 @@ def main():
     members   = get_guild_members(headers)
 
     if not members:
-        print("[ABORT] No members found — check the DEBUG output above.")
+        print("[ABORT] No members found.")
         return
 
     new_snapshots = {}
