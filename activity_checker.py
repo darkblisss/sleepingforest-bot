@@ -15,6 +15,8 @@ ERROR_WEBHOOK   = os.environ.get("ERROR_WEBHOOK_URL", "").strip()
 GH_PAT          = os.environ.get("GH_PAT", "").strip()
 SNAPSHOT_FILE   = "snapshots.json"
 
+MAX_DONATIONS_PER_DAY = 20
+
 SKILLS = [
     "mining", "woodcutting", "tracking", "fishing", "gathering",
     "herbalism", "forging", "leatherworking", "tailoring", "crafting",
@@ -135,7 +137,6 @@ def get_guild_members(headers: dict) -> list[dict]:
 
 
 def get_weekly_donation_counts(headers: dict) -> dict[str, int]:
-    """Returns {character_name: weekly_count} from the weekly leaderboard."""
     try:
         url = LEADERBOARD_API.format(guild_id=GUILD_ID)
         r = requests.get(url, headers=headers, timeout=15)
@@ -161,21 +162,22 @@ def get_weekly_donation_counts(headers: dict) -> dict[str, int]:
 
 def format_avg_daily_donations(weekly_count: int, joined_at_str: str) -> str:
     """
-    Average donations per day since joining, capped to 7 days.
-    1 donation count = 200 gold or 50 of a resource.
-    dubz example: 60 count / 5 days in guild = 12
+    Whole calendar days since joining (inclusive), capped at 7 for weekly data.
+    Count is capped at days × 20 (max 20 donations per day) to handle API overcounting.
+    dubz: joined Apr 1, today Apr 5 = 5 days, 60/5 = 12
+    Madeira: 7 days, min(160, 140)/7 = 20
     """
     try:
         joined = parse_joined_at(joined_at_str)
         if not joined:
             return "?"
-        days_in_guild = (datetime.now(timezone.utc) - joined).total_seconds() / 86400
-        days = max(1, min(7, days_in_guild))
-        avg  = weekly_count / days
-        # Round to nearest int, keep one decimal only if meaningful
-        if avg == int(avg):
-            return str(int(avg))
-        return str(round(avg, 1))
+        today     = datetime.now(timezone.utc).date()
+        join_date = joined.date()
+        days_in_guild = (today - join_date).days + 1  # inclusive of join day
+        days          = min(days_in_guild, 7)          # cap at 7 for weekly window
+        capped_count  = min(weekly_count, days * MAX_DONATIONS_PER_DAY)
+        avg           = capped_count / days
+        return str(int(avg)) if avg == int(avg) else str(round(avg, 1))
     except Exception:
         return "?"
 
@@ -340,8 +342,8 @@ def main():
         prev_streak      = prev_data.get("inactive_streak", 0)
         prev_last_active = prev_data.get("last_active_ts", now_iso)
 
-        weekly_count  = donation_counts.get(name, 0)
-        avg_str       = format_avg_daily_donations(weekly_count, joined_at)
+        weekly_count = donation_counts.get(name, 0)
+        avg_str      = format_avg_daily_donations(weekly_count, joined_at)
         try:
             avg_raw = float(avg_str)
         except Exception:
@@ -359,10 +361,10 @@ def main():
                 duration    = format_inactive_duration(last_active)
                 print(f"  [INACTIVE ×{streak}]  {name} — {duration} [{avg_str}]")
                 inactive.append({
-                    "name":             name,
-                    "streak":           streak,
-                    "last_active_ts":   last_active,
-                    "avg_donations":    avg_str,
+                    "name":              name,
+                    "streak":            streak,
+                    "last_active_ts":    last_active,
+                    "avg_donations":     avg_str,
                     "avg_donations_raw": avg_raw
                 })
         else:
