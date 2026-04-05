@@ -26,6 +26,9 @@ jobs:
       - name: Run activity check
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DEGEN_REFRESH_TOKEN: ${{ secrets.DEGEN_REFRESH_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          ERROR_WEBHOOK_URL: ${{ secrets.ERROR_WEBHOOK_URL }}
         run: python activity_checker.py
 
       - name: Commit updated snapshots
