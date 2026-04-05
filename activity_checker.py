@@ -146,7 +146,6 @@ def save_snapshots(snapshots: dict):
 
 
 def format_inactive_duration(iso_str: str) -> str:
-    """Format time since last active. Hours up to 239h, then days from 10d."""
     try:
         last = datetime.fromisoformat(iso_str)
         delta = datetime.now(timezone.utc) - last
@@ -186,13 +185,12 @@ def send_discord_alert(inactive: list[dict], last_check_ts: str):
 
     since = time_since(last_check_ts) if last_check_ts else "first check"
 
-    # Sort by longest inactive first
     inactive_sorted = sorted(inactive, key=lambda x: x["last_active_ts"])
 
     member_lines = []
     for entry in inactive_sorted:
         duration = format_inactive_duration(entry["last_active_ts"])
-        member_lines.append(f"• {entry['name']} (inactive {duration})")
+        member_lines.append(f"• {entry['name']} ({duration})")
 
     embed = {
         "title": "Inactive Guild Members",
@@ -203,7 +201,7 @@ def send_discord_alert(inactive: list[dict], last_check_ts: str):
         "color": 0xC0392B,
         "fields": [
             {
-                "name": f"Members ({len(inactive)}) — longest inactive first",
+                "name": "Members",
                 "value": "\n".join(member_lines),
                 "inline": False
             }
@@ -278,12 +276,12 @@ def main():
             if gained:
                 streak      = 0
                 last_active = now_iso
-                print(f"  [active]        {name}")
+                print(f"  [active]       {name}")
             else:
                 streak      = prev_streak + 1
                 last_active = prev_last_active
                 duration    = format_inactive_duration(last_active)
-                print(f"  [INACTIVE ×{streak}]  {name} — last active {duration} ago")
+                print(f"  [INACTIVE ×{streak}]  {name} — {duration}")
                 inactive.append({
                     "name":           name,
                     "streak":         streak,
@@ -292,7 +290,7 @@ def main():
         else:
             streak      = 0
             last_active = now_iso
-            print(f"  [NEW]           {name} — baseline saved")
+            print(f"  [NEW]          {name} — baseline saved")
 
         new_snapshots[name] = {
             "skills":          skills,
