@@ -6,8 +6,10 @@ import base64
 from datetime import datetime, timezone
 from nacl import encoding, public
 
+GUILD_ID      = "d08f77ef-fc13-4781-adce-0fcf88f9f77b"
 GUILD_API     = "https://api-v1.degenidle.com/api/guilds/character/ee938e63-72e6-4b8e-82bf-672ca6e0a568"
 PROFILE_API   = "https://api-v1.degenidle.com/api/characters/profile/{name}"
+LEADERBOARD_API = "https://api-v1.degenidle.com/api/guilds/{guild_id}/donations/leaderboard?period=weekly&characterId=ee938e63-72e6-4b8e-82bf-672ca6e0a568"
 WEBHOOK_URL   = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 ERROR_WEBHOOK = os.environ.get("ERROR_WEBHOOK_URL", "").strip()
 GH_PAT        = os.environ.get("GH_PAT", "").strip()
@@ -103,20 +105,96 @@ def refresh_access_token():
     return data["access_token"]
 
 
-def get_guild_members(headers: dict) -> list[str]:
+def parse_joined_at(joined_at_str: str) -> datetime | None:
+    try:
+        s = joined_at_str.replace(" ", "T")
+        if s.endswith("+00"):
+            s += ":00"
+        return datetime.fromisoformat(s)
+    except Exception:
+        return None
+
+
+def get_guild_members(headers: dict) -> list[dict]:
     r = requests.get(GUILD_API, headers=headers, timeout=15)
     r.raise_for_status()
     data = r.json()
 
-    names = []
+    members = []
     for char in data.get("members") or []:
         if isinstance(char, dict):
             name = char.get("character_name")
             if name:
-                names.append(name)
+                members.append({
+                    "name":      name,
+                    "joined_at": char.get("joined_at", "")
+                })
 
-    print(f"[Guild] Found {len(names)} members: {names}")
-    return names
+    print(f"[Guild] Found {len(members)} members: {[m['name'] for m in members]}")
+    return members
+
+
+def get_weekly_donation_counts(headers: dict) -> dict[str, int]:
+    """Returns {character_name: total_donation_count} from the weekly leaderboard."""
+    try:
+        url = LEADERBOARD_API.format(guild_id=GUILD_ID)
+        r = requests.get(url, headers=headers, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+
+        # Debug on first call so we can verify key names
+        print(f"[Donations] Top-level keys: {list(data.keys())}")
+        print(f"[Donations] Sample: {json.dumps(data)[:800]}")
+
+        # Try common list keys
+        entries = (
+            data.get("leaderboard") or
+            data.get("data") or
+            data.get("entries") or
+            data.get("donations") or
+            []
+        )
+
+        counts = {}
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            name = (
+                entry.get("character_name") or
+                entry.get("characterName") or
+                entry.get("name")
+            )
+            # Try common count keys
+            count = (
+                entry.get("total_count") or
+                entry.get("donation_count") or
+                entry.get("count") or
+                entry.get("total") or
+                0
+            )
+            if name:
+                counts[name] = int(count)
+
+        print(f"[Donations] Weekly counts: {counts}")
+        return counts
+
+    except Exception as e:
+        print(f"[ERROR] Could not fetch donation leaderboard: {e}")
+        return {}
+
+
+def format_avg_daily_donations(total_count: int, joined_at_str: str) -> str:
+    """Average donations per day since joining, capped to 7 days for weekly data."""
+    try:
+        joined = parse_joined_at(joined_at_str)
+        if not joined:
+            return "?"
+        days_in_guild = (datetime.now(timezone.utc) - joined).total_seconds() / 86400
+        days = max(1, min(7, days_in_guild))
+        avg = total_count / days
+        return str(round(avg, 1)).rstrip("0").rstrip(".")
+    except Exception:
+        return "?"
 
 
 def get_character_skills(name: str, headers: dict) -> dict | None:
@@ -185,12 +263,17 @@ def send_discord_alert(inactive: list[dict], last_check_ts: str):
 
     since = time_since(last_check_ts) if last_check_ts else "first check"
 
-    inactive_sorted = sorted(inactive, key=lambda x: x["last_active_ts"])
+    # Sort: longest inactive first, then lowest avg daily donations
+    inactive_sorted = sorted(
+        inactive,
+        key=lambda x: (x["last_active_ts"], -x["avg_donations"])
+    )
 
     member_lines = []
     for entry in inactive_sorted:
         duration = format_inactive_duration(entry["last_active_ts"])
-        member_lines.append(f"• {entry['name']} ({duration})")
+        avg      = entry["avg_donations"]
+        member_lines.append(f"• {entry['name']} ({duration}) [{avg}]")
 
     embed = {
         "title": "Inactive Guild Members",
@@ -245,9 +328,10 @@ def main():
         "user-agent": "Mozilla/5.0",
     }
 
-    snapshots     = load_snapshots()
-    last_check_ts = snapshots.get("_last_run")
-    members       = get_guild_members(headers)
+    snapshots       = load_snapshots()
+    last_check_ts   = snapshots.get("_last_run")
+    members         = get_guild_members(headers)
+    donation_counts = get_weekly_donation_counts(headers)
 
     if not members:
         print("[ABORT] No members found.")
@@ -258,7 +342,10 @@ def main():
     inactive      = []
     is_first_run  = not any(k != "_last_run" for k in snapshots)
 
-    for name in members:
+    for member in members:
+        name      = member["name"]
+        joined_at = member["joined_at"]
+
         skills = get_character_skills(name, headers)
         if skills is None:
             print(f"  [SKIP]    {name}")
@@ -271,6 +358,9 @@ def main():
         prev_streak      = prev_data.get("inactive_streak", 0)
         prev_last_active = prev_data.get("last_active_ts", now_iso)
 
+        weekly_count = donation_counts.get(name, 0)
+        avg_donations = format_avg_daily_donations(weekly_count, joined_at)
+
         if prev_skills:
             gained = any(skills.get(s, 0) > prev_skills.get(s, 0) for s in SKILLS)
             if gained:
@@ -281,11 +371,12 @@ def main():
                 streak      = prev_streak + 1
                 last_active = prev_last_active
                 duration    = format_inactive_duration(last_active)
-                print(f"  [INACTIVE ×{streak}]  {name} — {duration}")
+                print(f"  [INACTIVE ×{streak}]  {name} — {duration} [{avg_donations}]")
                 inactive.append({
                     "name":           name,
                     "streak":         streak,
-                    "last_active_ts": last_active
+                    "last_active_ts": last_active,
+                    "avg_donations":  float(avg_donations) if avg_donations not in ("?", "") else 0.0
                 })
         else:
             streak      = 0
