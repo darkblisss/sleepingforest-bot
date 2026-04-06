@@ -123,7 +123,7 @@ def build_embed(not_donated, used, cap, discord_map):
         lines.append(f"• {m['character_name']}")
     lines.append("")
     lines.append(f"About {hours} hours until reset, please get your donations in.")
-    lines.append("Need resources? Reach out for help!")
+    lines.append("**Need resources? Reach out for help!**")
     return {
         "title": "Daily Donation Reminder",
         "description": "\n".join(lines),
