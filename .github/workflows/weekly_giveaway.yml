@@ -1,0 +1,24 @@
+name: Weekly Giveaway
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-giveaway:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run weekly giveaway
+        env:
+          DEGEN_REFRESH_TOKEN: ${{ secrets.DEGEN_REFRESH_TOKEN }}
+          DISCORD_GIVEAWAY_WEBHOOK: ${{ secrets.DISCORD_GIVEAWAY_WEBHOOK }}
+        run: python weekly_giveaway.py
