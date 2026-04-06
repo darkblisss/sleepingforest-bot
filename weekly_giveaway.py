@@ -1,19 +1,24 @@
 import os
-import time
 import random
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
-REFRESH_TOKEN   = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
-WEBHOOK_URL     = os.environ.get("DISCORD_GIVEAWAY_WEBHOOK", "").strip()
+REFRESH_TOKEN  = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
+WEBHOOK_URL    = os.environ.get("DISCORD_GIVEAWAY_WEBHOOK", "").strip()
 
 GUILD_ID   = "d08f77ef-fc13-4781-adce-0fcf88f9f77b"
 CHAR_ID    = "ee938e63-72e6-4b8e-82bf-672ca6e0a568"
 BASE       = "https://api-v1.degenidle.com/api"
 CLIENT_ID  = "c9563b2ef30348f182e122030ef28ad7"
 
-DONATIONS_URL  = f"{BASE}/guilds/{GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
-RESOURCES_URL  = f"{BASE}/guilds/{GUILD_ID}/resources?characterId={CHAR_ID}"
+DONATIONS_URL = f"{BASE}/guilds/{GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
+RESOURCES_URL = f"{BASE}/guilds/{GUILD_ID}/resources?characterId={CHAR_ID}"
+
+def get_week_ending():
+    now = datetime.now(timezone.utc)
+    days_since_saturday = (now.weekday() - 5) % 7
+    last_saturday = now - timedelta(days=days_since_saturday)
+    return last_saturday.strftime("%b %d %Y")
 
 def get_access_token():
     if not REFRESH_TOKEN:
@@ -66,7 +71,6 @@ def get_player_name(player):
 def find_eligible(donations, daily_limit):
     threshold = daily_limit * 7
     eligible = []
-    # handle both list directly or wrapped in a key
     players = donations if isinstance(donations, list) else donations.get("members", donations.get("data", []))
     for player in players:
         count = player.get("count", 0)
@@ -77,71 +81,43 @@ def find_eligible(donations, daily_limit):
             })
     return sorted(eligible, key=lambda x: x["count"], reverse=True)
 
-def post_webhook(embed):
+def post_webhook(content):
     r = requests.post(
         WEBHOOK_URL,
-        json={"username": "SleepingForest Giveaway", "embeds": [embed]},
+        json={"username": "SleepingForest", "content": content},
         timeout=15
     )
     r.raise_for_status()
 
 def run_giveaway(eligible, daily_limit):
     threshold = daily_limit * 7
-    week_str = datetime.now(timezone.utc).strftime("%b %d %Y")
+    week_ending = get_week_ending()
+    footer = f"Week ending {week_ending} • Daily limit: {daily_limit}"
 
     if not eligible:
-        post_webhook({
-            "title": "🎉 Weekly Donation Giveaway",
-            "description": (
-                f"⚠️ **No eligible players this week.**\n"
-                f"No one reached {threshold} donations (daily limit × 7 days).\n"
-                f"Better luck next week!"
-            ),
-            "color": 0xFF4444,
-            "footer": {"text": f"Week ending {week_str} • Daily limit: {daily_limit}"}
-        })
+        message = (
+            f"**Weekly Donation Giveaway**\n\n"
+            f"No winner this week.\n"
+            f"Nobody reached the maximum donation cap of {threshold} this week.\n"
+            f"Better luck next week!\n\n"
+            f"{footer}"
+        )
+        post_webhook(message)
         print("No eligible players — posted to Discord.")
         return
 
-    names_list = "\n".join(
-        f"✅ **{p['name']}** — {p['count']} donations"
-        for p in eligible
-    )
-
-    # Message 1 — eligible players
-    post_webhook({
-        "title": "🎉 Weekly Donation Giveaway!",
-        "description": (
-            f"**{len(eligible)} player{'s' if len(eligible) != 1 else ''} donated every single day this week!**\n\n"
-            f"{names_list}\n\n"
-            f"*(Minimum threshold: {threshold} donations — daily limit {daily_limit} × 7 days)*"
-        ),
-        "color": 0x5865F2,
-        "footer": {"text": f"Week ending {week_str}"}
-    })
-
-    # Message 2 — drumroll
-    time.sleep(3)
-    post_webhook({
-        "title": "🥁 Picking a winner...",
-        "description": "🥁  🥁  🥁\n\nspinning...",
-        "color": 0xFFA500,
-    })
-
-    # Message 3 — winner
-    time.sleep(4)
     winner = random.choice(eligible)
-    post_webhook({
-        "title": "🏆 THIS WEEK'S WINNER!",
-        "description": (
-            f"# 🎊  {winner['name']}  🎊\n\n"
-            f"**{winner['name']}** wins this week's giveaway!\n"
-            f"*{winner['count']} donations this week*\n\n"
-            f"📩 **Contact an admin to claim your prize!**"
-        ),
-        "color": 0xFFD700,
-        "footer": {"text": f"Week ending {week_str} • {len(eligible)} eligible players"}
-    })
+    count = len(eligible)
+    player_word = "player" if count == 1 else "players"
+
+    message = (
+        f"**Weekly Donation Giveaway**\n\n"
+        f"Congratulations {winner['name']}, you won this week's giveaway!\n"
+        f"{count} {player_word} hit the max donation cap this week, well done all.\n"
+        f"Keep it up and see you next week!\n\n"
+        f"{footer}"
+    )
+    post_webhook(message)
     print(f"Winner: {winner['name']} — posted to Discord.")
 
 def main():
@@ -151,11 +127,10 @@ def main():
     token = get_access_token()
     headers = make_headers(token)
     daily_limit = get_daily_limit(headers)
-    print(f"Daily limit from API: {daily_limit}")
+    print(f"Daily limit: {daily_limit}, threshold: {daily_limit * 7}")
     donations = get_weekly_donations(headers)
-    print(f"Raw donations response type: {type(donations)}")
     eligible = find_eligible(donations, daily_limit)
-    print(f"Eligible players ({len(eligible)}): {[p['name'] for p in eligible]}")
+    print(f"Eligible ({len(eligible)}): {[p['name'] for p in eligible]}")
     run_giveaway(eligible, daily_limit)
     print("Done.")
 
