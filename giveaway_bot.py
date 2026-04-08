@@ -25,6 +25,7 @@ RESOURCES_URL = f"{BASE}/guilds/{GUILD_ID}/resources?characterId={CHAR_ID}"
 GIVEAWAY_TIME = time(hour=6, minute=0, tzinfo=timezone.utc)  # Sunday 06:00 UTC
 
 intents = discord.Intents.default()
+intents.message_content = True
 bot = discord.Client(intents=intents)
 
 # track which ISO week we last ran so it never fires twice
@@ -197,6 +198,15 @@ async def on_ready():
         weekly_giveaway.start()
 
 # ── Start ─────────────────────────────────────────────────────────
+
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+    if message.content == "!testgiveaway" and str(message.author.id) == "237324092569681921":
+        await message.channel.send("Running test giveaway...")
+        await asyncio.get_event_loop().run_in_executor(None, run_giveaway_logic)
 
 keep_alive()
 bot.run(BOT_TOKEN)
