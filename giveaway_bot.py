@@ -239,6 +239,10 @@ async def on_message(message):
 @bot.event
 async def on_ready():
     print(f"[BOT] Logged in as {bot.user} — online")
+    print(f"[ENV] DISCORD_GUILD_ID: '{DISCORD_GUILD_ID}' (len={len(DISCORD_GUILD_ID)})")
+    print(f"[ENV] DONATIONS_ROLE_ID: '{DONATIONS_ROLE_ID}' (len={len(DONATIONS_ROLE_ID)})")
+    print(f"[ENV] BOT_TOKEN set: {bool(BOT_TOKEN)}")
+    print(f"[ENV] WEBHOOK_URL set: {bool(WEBHOOK_URL)}")
     if not weekly_giveaway.is_running():
         weekly_giveaway.start()
 
