@@ -29,11 +29,10 @@ GIVEAWAY_TIME = time(hour=0, minute=0, tzinfo=timezone.utc)
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
 bot = discord.Client(intents=intents)
 
 last_run_week = None
-
-# ── Helpers ───────────────────────────────────────────────────────
 
 def get_week_ending():
     now = datetime.now(timezone.utc)
@@ -100,7 +99,7 @@ def get_player_name(player):
 
 def get_role_member_ids():
     if not DISCORD_GUILD_ID or not DONATIONS_ROLE_ID or not BOT_TOKEN:
-        print("[ROLE] Missing secrets — skipping role check")
+        print("[CRITICAL] Missing DISCORD_GUILD_ID, DONATIONS_ROLE_ID or BOT_TOKEN — cannot check roles")
         return None
     headers = {"Authorization": f"Bot {BOT_TOKEN}"}
     members = []
@@ -123,6 +122,11 @@ def get_role_member_ids():
     return role_ids
 
 def find_eligible(donations, daily_limit, discord_map, role_ids):
+    # fail closed — if role list failed to load, nobody is eligible
+    if role_ids is None:
+        print("[CRITICAL] Role list is None — aborting giveaway. Check DISCORD_GUILD_ID, DONATIONS_ROLE_ID and bot permissions.")
+        return [], 0
+
     leader_count = None
     for player in donations:
         if get_player_name(player) == GUILD_LEADER:
@@ -136,17 +140,21 @@ def find_eligible(donations, daily_limit, discord_map, role_ids):
         name = get_player_name(player)
         count = player.get("count", 0)
 
+        # step 1: in guild leaderboard (implicit — they appear in the API)
+        # step 2: match or exceed Bloss's count
         if count < threshold:
             print(f"[GIVEAWAY] {name}: {count} — below threshold, excluded")
             continue
 
+        # step 3: must be in members.json
         discord_id = discord_map.get(name, "")
         if not discord_id:
-            print(f"[GIVEAWAY] {name}: passed count but not in members.json, excluded")
+            print(f"[GIVEAWAY] {name}: not in members.json, excluded")
             continue
 
-        if role_ids is not None and discord_id not in role_ids:
-            print(f"[GIVEAWAY] {name}: in members.json but missing donations role, excluded")
+        # step 4: must have donations role
+        if discord_id not in role_ids:
+            print(f"[GIVEAWAY] {name}: missing donations role, excluded")
             continue
 
         print(f"[GIVEAWAY] {name}: {count} — eligible")
@@ -169,19 +177,19 @@ def run_giveaway_logic():
     donations = get_weekly_donations(headers)
     role_ids = get_role_member_ids()
     eligible, threshold = find_eligible(donations, daily_limit, discord_map, role_ids)
+
+    if threshold == 0:
+        print("[GIVEAWAY] Aborted — role check failed.")
+        return
+
     week_ending = get_week_ending()
     footer_text = f"Week ending {week_ending} • Daily limit: {daily_limit}"
-
     print(f"[GIVEAWAY] Final eligible ({len(eligible)}): {[p['name'] for p in eligible]}")
 
     if not eligible:
         post_webhook({
             "title": "Weekly Donations Giveaway",
-            "description": (
-                "No winner this week.\n"
-                "Nobody hit the donation cap every day this week.\n"
-                "Better luck next week!"
-            ),
+            "description": "No winner this week.\nNobody hit the donation cap every day this week.\nBetter luck next week!",
             "color": 0x958AEA,
             "footer": {"text": footer_text},
         })
@@ -209,8 +217,6 @@ def run_giveaway_logic():
     )
     print(f"[GIVEAWAY] Winner: {winner['name']} — posted.")
 
-# ── Task loop — Monday 00:00 UTC ──────────────────────────────────
-
 @tasks.loop(time=GIVEAWAY_TIME)
 async def weekly_giveaway():
     global last_run_week
@@ -227,8 +233,6 @@ async def weekly_giveaway():
     last_run_week = week_key
     print(f"[GIVEAWAY] Running for week {week_key} at {now}")
     await asyncio.get_event_loop().run_in_executor(None, run_giveaway_logic)
-
-# ── Test command — owner only ─────────────────────────────────────
 
 @bot.event
 async def on_message(message):
