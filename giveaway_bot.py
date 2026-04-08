@@ -8,36 +8,38 @@ from discord.ext import tasks
 from datetime import datetime, timezone, time, timedelta
 from keep_alive import keep_alive
 
-REFRESH_TOKEN  = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
-WEBHOOK_URL    = os.environ.get("DISCORD_GIVEAWAY_WEBHOOK", "").strip()
-BOT_TOKEN      = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
+REFRESH_TOKEN      = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
+WEBHOOK_URL        = os.environ.get("DISCORD_GIVEAWAY_WEBHOOK", "").strip()
+BOT_TOKEN          = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
+DISCORD_GUILD_ID   = os.environ.get("DISCORD_GUILD_ID", "").strip()
+DONATIONS_ROLE_ID  = os.environ.get("DONATIONS_ROLE_ID", "").strip()
 
-GUILD_ID      = "d08f77ef-fc13-4781-adce-0fcf88f9f77b"
-CHAR_ID       = "ee938e63-72e6-4b8e-82bf-672ca6e0a568"
-BASE          = "https://api-v1.degenidle.com/api"
-CLIENT_ID     = "c9563b2ef30348f182e122030ef28ad7"
-MEMBERS_FILE  = "members.json"
-GUILD_LEADER  = "Bloss"
+DEGEN_GUILD_ID = "d08f77ef-fc13-4781-adce-0fcf88f9f77b"
+CHAR_ID        = "ee938e63-72e6-4b8e-82bf-672ca6e0a568"
+BASE           = "https://api-v1.degenidle.com/api"
+CLIENT_ID      = "c9563b2ef30348f182e122030ef28ad7"
+MEMBERS_FILE   = "members.json"
+GUILD_LEADER   = "Bloss"
 
-DONATIONS_URL = f"{BASE}/guilds/{GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
-RESOURCES_URL = f"{BASE}/guilds/{GUILD_ID}/resources?characterId={CHAR_ID}"
+DONATIONS_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
+RESOURCES_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/resources?characterId={CHAR_ID}"
 
-GIVEAWAY_TIME = time(hour=6, minute=0, tzinfo=timezone.utc)  # Sunday 06:00 UTC
+# Monday 00:00 UTC — matches raid/weekly reset
+GIVEAWAY_TIME = time(hour=0, minute=0, tzinfo=timezone.utc)
 
 intents = discord.Intents.default()
-intents.message_content = True
 bot = discord.Client(intents=intents)
 
-# track which ISO week we last ran so it never fires twice
 last_run_week = None
 
 # ── Helpers ───────────────────────────────────────────────────────
 
 def get_week_ending():
+    # week runs Mon–Sun, so week ending = most recent Sunday
     now = datetime.now(timezone.utc)
-    days_since_saturday = (now.weekday() - 5) % 7
-    last_saturday = now - timedelta(days=days_since_saturday)
-    return last_saturday.strftime("%b %d %Y")
+    days_since_sunday = (now.weekday() + 1) % 7  # Mon=1 day after Sun, etc.
+    last_sunday = now - timedelta(days=days_since_sunday)
+    return last_sunday.strftime("%b %d %Y")
 
 def load_members():
     if not os.path.exists(MEMBERS_FILE):
@@ -96,24 +98,69 @@ def get_player_name(player):
             return player[field]
     return "Unknown"
 
-def find_eligible(donations, daily_limit):
+def get_role_member_ids():
+    if not DISCORD_GUILD_ID or not DONATIONS_ROLE_ID or not BOT_TOKEN:
+        print("[ROLE] Missing secrets — skipping role check")
+        return None
+    headers = {"Authorization": f"Bot {BOT_TOKEN}"}
+    members = []
+    after = None
+    while True:
+        url = f"https://discord.com/api/v10/guilds/{DISCORD_GUILD_ID}/members?limit=1000"
+        if after:
+            url += f"&after={after}"
+        r = requests.get(url, headers=headers, timeout=15)
+        r.raise_for_status()
+        batch = r.json()
+        if not batch:
+            break
+        members.extend(batch)
+        if len(batch) < 1000:
+            break
+        after = batch[-1]["user"]["id"]
+    role_ids = {m["user"]["id"] for m in members if DONATIONS_ROLE_ID in m["roles"]}
+    print(f"[ROLE] {len(role_ids)} members have the donations role")
+    return role_ids
+
+def find_eligible(donations, daily_limit, discord_map, role_ids):
+    # step 1: find Bloss's count as threshold
     leader_count = None
     for player in donations:
         if get_player_name(player) == GUILD_LEADER:
             leader_count = player.get("count", 0)
             break
     threshold = leader_count if leader_count is not None else daily_limit * 7
+    print(f"[GIVEAWAY] Threshold ({GUILD_LEADER}): {threshold}")
+
     eligible = []
     for player in donations:
-        if player.get("count", 0) >= threshold:
-            eligible.append({
-                "name": get_player_name(player),
-                "count": player.get("count", 0),
-            })
+        name = get_player_name(player)
+        count = player.get("count", 0)
+
+        # step 1: in guild leaderboard (already true — they appear in the API)
+        # step 2: match or exceed Bloss
+        if count < threshold:
+            print(f"[GIVEAWAY] {name}: {count} — below threshold, excluded")
+            continue
+
+        # step 3: must be in members.json (linked to Discord)
+        discord_id = discord_map.get(name, "")
+        if not discord_id:
+            print(f"[GIVEAWAY] {name}: passed count but not in members.json, excluded")
+            continue
+
+        # step 4: must have donations role
+        if role_ids is not None and discord_id not in role_ids:
+            print(f"[GIVEAWAY] {name}: in members.json but missing donations role, excluded")
+            continue
+
+        print(f"[GIVEAWAY] {name}: {count} — eligible")
+        eligible.append({"name": name, "count": count})
+
     return sorted(eligible, key=lambda x: x["count"], reverse=True), threshold
 
 def post_webhook(embed, content=""):
-    payload = {"username": "SleepingForest", "embeds": [embed]}
+    payload = {"username": "SleepingForest Giveaway", "embeds": [embed]}
     if content:
         payload["content"] = content
         payload["allowed_mentions"] = {"parse": ["users"]}
@@ -125,11 +172,12 @@ def run_giveaway_logic():
     headers = make_headers(token)
     daily_limit = get_daily_limit(headers)
     donations = get_weekly_donations(headers)
-    eligible, threshold = find_eligible(donations, daily_limit)
+    role_ids = get_role_member_ids()
+    eligible, threshold = find_eligible(donations, daily_limit, discord_map, role_ids)
     week_ending = get_week_ending()
     footer_text = f"Week ending {week_ending} • Daily limit: {daily_limit}"
 
-    print(f"[GIVEAWAY] Threshold: {threshold}, Eligible ({len(eligible)}): {[p['name'] for p in eligible]}")
+    print(f"[GIVEAWAY] Final eligible ({len(eligible)}): {[p['name'] for p in eligible]}")
 
     if not eligible:
         post_webhook({
@@ -166,47 +214,30 @@ def run_giveaway_logic():
     )
     print(f"[GIVEAWAY] Winner: {winner['name']} — posted.")
 
-# ── Task loop — fires every Sunday at 06:00 UTC ───────────────────
+# ── Task loop — fires every Monday at 00:00 UTC ───────────────────
 
 @tasks.loop(time=GIVEAWAY_TIME)
 async def weekly_giveaway():
     global last_run_week
     now = datetime.now(timezone.utc)
 
-    # only run on Sunday (weekday 6)
-    if now.weekday() != 6:
+    if now.weekday() != 0:  # 0 = Monday
         return
 
-    # prevent double-firing in same week if bot restarts
     week_key = now.strftime("%Y-W%W")
     if week_key == last_run_week:
         print(f"[GIVEAWAY] Already ran for week {week_key}, skipping.")
         return
 
     last_run_week = week_key
-    print(f"[GIVEAWAY] Running for week {week_key}")
-
-    # run blocking requests in a thread so bot doesn't freeze
+    print(f"[GIVEAWAY] Running for week {week_key} at {now}")
     await asyncio.get_event_loop().run_in_executor(None, run_giveaway_logic)
-
-# ── Bot events ────────────────────────────────────────────────────
 
 @bot.event
 async def on_ready():
     print(f"[BOT] Logged in as {bot.user} — online")
     if not weekly_giveaway.is_running():
         weekly_giveaway.start()
-
-# ── Start ─────────────────────────────────────────────────────────
-
-
-@bot.event
-async def on_message(message):
-    if message.author == bot.user:
-        return
-    if message.content == "!testgiveaway" and str(message.author.id) == "237324092569681921":
-        await message.channel.send("Running test giveaway...")
-        await asyncio.get_event_loop().run_in_executor(None, run_giveaway_logic)
 
 keep_alive()
 bot.run(BOT_TOKEN)
