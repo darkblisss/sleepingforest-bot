@@ -20,14 +20,15 @@ BASE           = "https://api-v1.degenidle.com/api"
 CLIENT_ID      = "c9563b2ef30348f182e122030ef28ad7"
 MEMBERS_FILE   = "members.json"
 GUILD_LEADER   = "Bloss"
+OWNER_ID       = "237324092569681921"
 
 DONATIONS_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
 RESOURCES_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/resources?characterId={CHAR_ID}"
 
-# Monday 00:00 UTC — matches raid/weekly reset
 GIVEAWAY_TIME = time(hour=0, minute=0, tzinfo=timezone.utc)
 
 intents = discord.Intents.default()
+intents.message_content = True
 bot = discord.Client(intents=intents)
 
 last_run_week = None
@@ -35,9 +36,8 @@ last_run_week = None
 # ── Helpers ───────────────────────────────────────────────────────
 
 def get_week_ending():
-    # week runs Mon–Sun, so week ending = most recent Sunday
     now = datetime.now(timezone.utc)
-    days_since_sunday = (now.weekday() + 1) % 7  # Mon=1 day after Sun, etc.
+    days_since_sunday = (now.weekday() + 1) % 7
     last_sunday = now - timedelta(days=days_since_sunday)
     return last_sunday.strftime("%b %d %Y")
 
@@ -123,7 +123,6 @@ def get_role_member_ids():
     return role_ids
 
 def find_eligible(donations, daily_limit, discord_map, role_ids):
-    # step 1: find Bloss's count as threshold
     leader_count = None
     for player in donations:
         if get_player_name(player) == GUILD_LEADER:
@@ -137,19 +136,15 @@ def find_eligible(donations, daily_limit, discord_map, role_ids):
         name = get_player_name(player)
         count = player.get("count", 0)
 
-        # step 1: in guild leaderboard (already true — they appear in the API)
-        # step 2: match or exceed Bloss
         if count < threshold:
             print(f"[GIVEAWAY] {name}: {count} — below threshold, excluded")
             continue
 
-        # step 3: must be in members.json (linked to Discord)
         discord_id = discord_map.get(name, "")
         if not discord_id:
             print(f"[GIVEAWAY] {name}: passed count but not in members.json, excluded")
             continue
 
-        # step 4: must have donations role
         if role_ids is not None and discord_id not in role_ids:
             print(f"[GIVEAWAY] {name}: in members.json but missing donations role, excluded")
             continue
@@ -214,14 +209,14 @@ def run_giveaway_logic():
     )
     print(f"[GIVEAWAY] Winner: {winner['name']} — posted.")
 
-# ── Task loop — fires every Monday at 00:00 UTC ───────────────────
+# ── Task loop — Monday 00:00 UTC ──────────────────────────────────
 
 @tasks.loop(time=GIVEAWAY_TIME)
 async def weekly_giveaway():
     global last_run_week
     now = datetime.now(timezone.utc)
 
-    if now.weekday() != 0:  # 0 = Monday
+    if now.weekday() != 0:
         return
 
     week_key = now.strftime("%Y-W%W")
@@ -232,6 +227,16 @@ async def weekly_giveaway():
     last_run_week = week_key
     print(f"[GIVEAWAY] Running for week {week_key} at {now}")
     await asyncio.get_event_loop().run_in_executor(None, run_giveaway_logic)
+
+# ── Test command — owner only ─────────────────────────────────────
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+    if message.content == "!testgiveaway" and str(message.author.id) == OWNER_ID:
+        await message.channel.send("Running test giveaway...")
+        await asyncio.get_event_loop().run_in_executor(None, run_giveaway_logic)
 
 @bot.event
 async def on_ready():
