@@ -240,7 +240,11 @@ async def on_message(message):
         return
     if message.content == "!testgiveaway" and str(message.author.id) == OWNER_ID:
         await message.channel.send("Running test giveaway...")
-        await asyncio.get_event_loop().run_in_executor(None, run_giveaway_logic)
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, run_giveaway_logic)
+            await message.channel.send("Done — check the giveaway channel.")
+        except Exception as e:
+            await message.channel.send(f"Error: {e}")
 
 @bot.event
 async def on_ready():
