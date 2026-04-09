@@ -229,7 +229,13 @@ async def on_message(message):
     if message.author == bot.user:
         return
     if message.content == "!testgiveaway" and str(message.author.id) == OWNER_ID:
-        await message.channel.send("Running test giveaway...")
+        await message.channel.send(
+            f"**Debug info:**\n"
+            f"GUILD_ID: `{DISCORD_GUILD_ID or 'MISSING'}` (len={len(DISCORD_GUILD_ID)})\n"
+            f"ROLE_ID: `{DONATIONS_ROLE_ID or 'MISSING'}` (len={len(DONATIONS_ROLE_ID)})\n"
+            f"BOT_TOKEN set: `{bool(BOT_TOKEN)}`\n"
+            f"WEBHOOK set: `{bool(WEBHOOK_URL)}`"
+        )
         try:
             result = await asyncio.get_event_loop().run_in_executor(None, run_giveaway_logic)
             await message.channel.send(f"Result: {result}")
