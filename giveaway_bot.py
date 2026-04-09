@@ -99,7 +99,6 @@ def get_player_name(player):
 
 def get_role_member_ids():
     if not DISCORD_GUILD_ID or not DONATIONS_ROLE_ID or not BOT_TOKEN:
-        print(f"[CRITICAL] Missing secrets — GUILD_ID='{DISCORD_GUILD_ID}' ROLE_ID='{DONATIONS_ROLE_ID}' BOT='{bool(BOT_TOKEN)}'")
         return None
     headers = {"Authorization": f"Bot {BOT_TOKEN}"}
     members = []
@@ -123,7 +122,7 @@ def get_role_member_ids():
 
 def find_eligible(donations, daily_limit, discord_map, role_ids):
     if role_ids is None:
-        print("[CRITICAL] Role list failed to load — aborting giveaway")
+        print("[CRITICAL] Role list failed to load — aborting")
         return [], 0
 
     leader_count = None
@@ -142,12 +141,10 @@ def find_eligible(donations, daily_limit, discord_map, role_ids):
         if count < threshold:
             print(f"[GIVEAWAY] {name}: {count} — below threshold, excluded")
             continue
-
         discord_id = discord_map.get(name, "")
         if not discord_id:
             print(f"[GIVEAWAY] {name}: not in members.json, excluded")
             continue
-
         if discord_id not in role_ids:
             print(f"[GIVEAWAY] {name}: missing donations role, excluded")
             continue
@@ -174,7 +171,7 @@ def run_giveaway_logic():
     eligible, threshold = find_eligible(donations, daily_limit, discord_map, role_ids)
 
     if threshold == 0:
-        return "aborted: role check failed — check Render logs for [CRITICAL]"
+        return "aborted: role check failed"
 
     week_ending = get_week_ending()
     footer_text = f"Week ending {week_ending} • Daily limit: {daily_limit}"
@@ -229,13 +226,6 @@ async def on_message(message):
     if message.author == bot.user:
         return
     if message.content == "!testgiveaway" and str(message.author.id) == OWNER_ID:
-        await message.channel.send(
-            f"**Debug info:**\n"
-            f"GUILD_ID: `{DISCORD_GUILD_ID or 'MISSING'}` (len={len(DISCORD_GUILD_ID)})\n"
-            f"ROLE_ID: `{DONATIONS_ROLE_ID or 'MISSING'}` (len={len(DONATIONS_ROLE_ID)})\n"
-            f"BOT_TOKEN set: `{bool(BOT_TOKEN)}`\n"
-            f"WEBHOOK set: `{bool(WEBHOOK_URL)}`"
-        )
         try:
             result = await asyncio.get_event_loop().run_in_executor(None, run_giveaway_logic)
             await message.channel.send(f"Result: {result}")
@@ -245,10 +235,6 @@ async def on_message(message):
 @bot.event
 async def on_ready():
     print(f"[BOT] Logged in as {bot.user} — online")
-    print(f"[ENV] DISCORD_GUILD_ID: '{DISCORD_GUILD_ID}' (len={len(DISCORD_GUILD_ID)})")
-    print(f"[ENV] DONATIONS_ROLE_ID: '{DONATIONS_ROLE_ID}' (len={len(DONATIONS_ROLE_ID)})")
-    print(f"[ENV] BOT_TOKEN set: {bool(BOT_TOKEN)}")
-    print(f"[ENV] WEBHOOK_URL set: {bool(WEBHOOK_URL)}")
     if not weekly_giveaway.is_running():
         weekly_giveaway.start()
 
