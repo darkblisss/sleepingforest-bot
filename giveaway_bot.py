@@ -183,6 +183,7 @@ def run_giveaway_logic():
             "description": "No winner this week.\nNobody hit the donation cap every day this week.\nBetter luck next week!",
             "color": 0x958AEA,
             "footer": {"text": footer_text},
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
         return "posted: no eligible players"
 
@@ -202,6 +203,7 @@ def run_giveaway_logic():
             ),
             "color": 0x958AEA,
             "footer": {"text": footer_text},
+            "timestamp": datetime.now(timezone.utc).isoformat()
         },
         content=mention if winner_discord_id else ""
     )
