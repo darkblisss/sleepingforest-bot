@@ -14,16 +14,18 @@ DISCORD_GUILD_ID   = os.environ.get("DISCORD_GUILD_ID", "").strip()
 DONATIONS_ROLE_ID  = os.environ.get("DONATIONS_ROLE_ID", "").strip()
 GH_PAT             = os.environ.get("GH_PAT", "").strip()
 
-DEGEN_GUILD_ID = "d08f77ef-fc13-4781-adce-0fcf88f9f77b"
-CHAR_ID        = "ee938e63-72e6-4b8e-82bf-672ca6e0a568"
-BASE           = "https://api-v1.degenidle.com/api"
-CLIENT_ID      = "c9563b2ef30348f182e122030ef28ad7"
-MEMBERS_FILE   = "members.json"
-GUILD_LEADER   = "Bloss"
-OWNER_ID       = "237324092569681921"
+DEGEN_GUILD_ID  = "d08f77ef-fc13-4781-adce-0fcf88f9f77b"
+CHAR_ID         = "ee938e63-72e6-4b8e-82bf-672ca6e0a568"
+BASE            = "https://api-v1.degenidle.com/api"
+CLIENT_ID       = "c9563b2ef30348f182e122030ef28ad7"
+MEMBERS_FILE    = "members.json"
+GUILD_LEADER    = "Bloss"
+OWNER_ID        = "237324092569681921"
+MEMBERS_ROLE_ID = "1487294472478785536"
 
 DONATIONS_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
 RESOURCES_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/resources?characterId={CHAR_ID}"
+GUILD_API     = f"{BASE}/guilds/character/{CHAR_ID}"
 
 GIVEAWAY_TIME = time(hour=0, minute=0, tzinfo=timezone.utc)
 
@@ -45,6 +47,13 @@ def load_members():
         return {}
     with open(MEMBERS_FILE, "r") as f:
         return json.load(f)
+
+def save_members(data):
+    with open(MEMBERS_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+def has_members_role(member):
+    return any(str(r.id) == MEMBERS_ROLE_ID for r in member.roles)
 
 def get_access_token():
     refresh_token = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
@@ -70,6 +79,15 @@ def make_headers(access_token):
         "authorization": f"Bearer {access_token}",
         "user-agent": "Mozilla/5.0"
     }
+
+def get_guild_member_names(headers):
+    try:
+        r = requests.get(GUILD_API, headers=headers, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        return [m["character_name"] for m in (data.get("members") or []) if m.get("character_name")]
+    except Exception:
+        return []
 
 def get_daily_limit(headers):
     r = requests.get(RESOURCES_URL, headers=headers, timeout=15)
@@ -226,6 +244,49 @@ def trigger_activity_check():
         return "Activity check triggered — results in Discord shortly"
     return f"Failed: {r.status_code} {r.text}"
 
+def do_link(discord_id, ingame_name_input):
+    try:
+        token = get_access_token()
+        headers = make_headers(token)
+        guild_names = get_guild_member_names(headers)
+    except Exception as e:
+        return f"Could not fetch guild members: {e}"
+
+    matched_name = next((n for n in guild_names if n.lower() == ingame_name_input.lower()), None)
+    if not matched_name:
+        return f"No guild member found matching **{ingame_name_input}**. Check the spelling and try again."
+
+    members = load_members()
+    members = {k: v for k, v in members.items() if v != discord_id}
+    members[matched_name] = discord_id
+    save_members(members)
+    return f"Linked **{matched_name}** to your Discord account."
+
+def do_self_unlink(discord_id):
+    members = load_members()
+    matched_key = next((k for k, v in members.items() if v == discord_id), None)
+    if not matched_key:
+        return "You are not currently linked to any in-game name."
+    del members[matched_key]
+    save_members(members)
+    return f"Unlinked **{matched_key}** from your Discord account."
+
+def do_force_unlink(ingame_name_input):
+    members = load_members()
+    matched_key = next((k for k in members if k.lower() == ingame_name_input.lower()), None)
+    if not matched_key:
+        return f"No entry found for **{ingame_name_input}** in members.json."
+    del members[matched_key]
+    save_members(members)
+    return f"Force-unlinked **{matched_key}** from members.json."
+
+def do_members_list():
+    members = load_members()
+    if not members:
+        return "members.json is empty."
+    lines = [f"**{name}** → <@{did}>" for name, did in sorted(members.items())]
+    return f"**Linked members ({len(lines)}):**\n" + "\n".join(lines)
+
 @tasks.loop(time=GIVEAWAY_TIME)
 async def weekly_giveaway():
     global last_run_week
@@ -244,15 +305,81 @@ async def weekly_giveaway():
 async def on_message(message):
     if message.author == bot.user:
         return
-    if str(message.author.id) != OWNER_ID:
+
+    content = message.content.strip()
+    author_id = str(message.author.id)
+    is_owner = author_id == OWNER_ID
+
+    # !link — members role only, result DMed
+    if content.lower().startswith("!link "):
+        if not has_members_role(message.author) and not is_owner:
+            return
+        ingame_name = content[6:].strip()
+        if not ingame_name:
+            try:
+                await message.author.send("Usage: `!link YourIngameName`")
+            except Exception:
+                pass
+            return
+        try:
+            result = await asyncio.get_running_loop().run_in_executor(None, do_link, author_id, ingame_name)
+            try:
+                await message.author.send(result)
+            except Exception:
+                await message.channel.send(f"{message.author.mention} {result}")
+        except Exception as e:
+            await message.channel.send(f"Error: {e}")
         return
-    if message.content == "!testgiveaway":
+
+    # !unlink — members role = unlinks themselves, owner = force unlinks by name
+    if content.lower() == "!unlink" or content.lower().startswith("!unlink "):
+        parts = content.split(None, 1)
+        force_name = parts[1].strip() if len(parts) > 1 else None
+
+        if force_name and is_owner:
+            # Owner force-unlinking someone by in-game name
+            try:
+                result = await asyncio.get_running_loop().run_in_executor(None, do_force_unlink, force_name)
+                try:
+                    await message.author.send(result)
+                except Exception:
+                    await message.channel.send(result)
+            except Exception as e:
+                await message.channel.send(f"Error: {e}")
+        elif not force_name and (has_members_role(message.author) or is_owner):
+            # Member unlinking themselves
+            try:
+                result = await asyncio.get_running_loop().run_in_executor(None, do_self_unlink, author_id)
+                try:
+                    await message.author.send(result)
+                except Exception:
+                    await message.channel.send(f"{message.author.mention} {result}")
+            except Exception as e:
+                await message.channel.send(f"Error: {e}")
+        return
+
+    # Owner-only commands
+    if not is_owner:
+        return
+
+    if content.lower() == "!members":
+        try:
+            result = await asyncio.get_running_loop().run_in_executor(None, do_members_list)
+            try:
+                await message.author.send(result)
+            except Exception:
+                await message.channel.send(result)
+        except Exception as e:
+            await message.channel.send(f"Error: {e}")
+
+    elif content == "!testgiveaway":
         try:
             result = await asyncio.get_running_loop().run_in_executor(None, run_giveaway_logic)
             await message.channel.send(f"Result: {result}")
         except Exception as e:
             await message.channel.send(f"Error: {e}")
-    elif message.content == "!activitycheck":
+
+    elif content == "!activitycheck":
         try:
             result = await asyncio.get_running_loop().run_in_executor(None, trigger_activity_check)
             await message.channel.send(result)
