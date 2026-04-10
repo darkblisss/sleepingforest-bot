@@ -33,7 +33,7 @@ def send_error_alert(message):
             pass
 
 
-def update_render_secret(new_refresh_token):
+def update_render_secret(new_refresh_token, token_changed=True):
     if not RENDER_API_KEY or not RENDER_SERVICE_ID or not new_refresh_token:
         return
     headers = {"Authorization": f"Bearer {RENDER_API_KEY}", "Accept": "application/json", "Content-Type": "application/json"}
@@ -97,7 +97,8 @@ def update_github_secret(new_refresh_token):
         if not success:
             send_error_alert(f"⛔ Failed to save new DEGEN_REFRESH_TOKEN to {repo} after 3 attempts — chain will break in 24h")
 
-    update_render_secret(new_refresh_token)
+    same = new_refresh == refresh_token
+    update_render_secret(new_refresh_token, token_changed=not same)
 
 def refresh_access_token():
     refresh_token = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
