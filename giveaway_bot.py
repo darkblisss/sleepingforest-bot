@@ -8,11 +8,11 @@ from discord.ext import tasks
 from datetime import datetime, timezone, time, timedelta
 from keep_alive import keep_alive
 
-REFRESH_TOKEN      = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
 WEBHOOK_URL        = os.environ.get("DISCORD_GIVEAWAY_WEBHOOK", "").strip()
 BOT_TOKEN          = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
 DISCORD_GUILD_ID   = os.environ.get("DISCORD_GUILD_ID", "").strip()
 DONATIONS_ROLE_ID  = os.environ.get("DONATIONS_ROLE_ID", "").strip()
+GH_PAT             = os.environ.get("GH_PAT", "").strip()
 
 DEGEN_GUILD_ID = "d08f77ef-fc13-4781-adce-0fcf88f9f77b"
 CHAR_ID        = "ee938e63-72e6-4b8e-82bf-672ca6e0a568"
@@ -47,12 +47,15 @@ def load_members():
         return json.load(f)
 
 def get_access_token():
+    refresh_token = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
+    if not refresh_token:
+        raise RuntimeError("Missing DEGEN_REFRESH_TOKEN")
     r = requests.post(
         "https://auth.degenidle.com/oauth2/token",
         data={
             "client_id": CLIENT_ID,
             "grant_type": "refresh_token",
-            "refresh_token": REFRESH_TOKEN,
+            "refresh_token": refresh_token,
         },
         timeout=20
     )
@@ -137,7 +140,6 @@ def find_eligible(donations, daily_limit, discord_map, role_ids):
     for player in donations:
         name = get_player_name(player)
         count = player.get("count", 0)
-
         if count < threshold:
             print(f"[GIVEAWAY] {name}: {count} — below threshold, excluded")
             continue
@@ -148,7 +150,6 @@ def find_eligible(donations, daily_limit, discord_map, role_ids):
         if discord_id not in role_ids:
             print(f"[GIVEAWAY] {name}: missing donations role, excluded")
             continue
-
         print(f"[GIVEAWAY] {name}: {count} — eligible")
         eligible.append({"name": name, "count": count})
 
@@ -209,6 +210,22 @@ def run_giveaway_logic():
     )
     return f"posted: winner is {winner['name']}"
 
+def trigger_activity_check():
+    if not GH_PAT:
+        return "error: GH_PAT not set in Render env vars"
+    r = requests.post(
+        "https://api.github.com/repos/darkblisss/guild-activity-checker/actions/workflows/activity-check.yml/dispatches",
+        headers={
+            "Authorization": f"Bearer {GH_PAT}",
+            "Accept": "application/vnd.github+json"
+        },
+        json={"ref": "main"},
+        timeout=15
+    )
+    if r.status_code == 204:
+        return "Activity check triggered — results in Discord shortly"
+    return f"Failed: {r.status_code} {r.text}"
+
 @tasks.loop(time=GIVEAWAY_TIME)
 async def weekly_giveaway():
     global last_run_week
@@ -221,16 +238,24 @@ async def weekly_giveaway():
         return
     last_run_week = week_key
     print(f"[GIVEAWAY] Running for week {week_key} at {now}")
-    await asyncio.get_event_loop().run_in_executor(None, run_giveaway_logic)
+    await asyncio.get_running_loop().run_in_executor(None, run_giveaway_logic)
 
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
         return
-    if message.content == "!testgiveaway" and str(message.author.id) == OWNER_ID:
+    if str(message.author.id) != OWNER_ID:
+        return
+    if message.content == "!testgiveaway":
         try:
-            result = await asyncio.get_event_loop().run_in_executor(None, run_giveaway_logic)
+            result = await asyncio.get_running_loop().run_in_executor(None, run_giveaway_logic)
             await message.channel.send(f"Result: {result}")
+        except Exception as e:
+            await message.channel.send(f"Error: {e}")
+    elif message.content == "!activitycheck":
+        try:
+            result = await asyncio.get_running_loop().run_in_executor(None, trigger_activity_check)
+            await message.channel.send(result)
         except Exception as e:
             await message.channel.send(f"Error: {e}")
 
