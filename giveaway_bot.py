@@ -244,6 +244,41 @@ def trigger_activity_check():
         return "Activity check triggered — results in Discord shortly"
     return f"Failed: {r.status_code} {r.text}"
 
+
+def push_members_to_github():
+    if not GH_PAT:
+        print("[WARN] GH_PAT not set — skipping members.json push to GitHub")
+        return
+    try:
+        members_data = open(MEMBERS_FILE, "r").read()
+        encoded = __import__("base64").b64encode(members_data.encode()).decode()
+        headers = {
+            "Authorization": f"Bearer {GH_PAT}",
+            "Accept": "application/vnd.github+json"
+        }
+        # Get current SHA of the file
+        r = requests.get(
+            "https://api.github.com/repos/darkblisss/donations-bot/contents/members.json",
+            headers=headers, timeout=10
+        )
+        sha = r.json().get("sha", "") if r.status_code == 200 else ""
+        payload = {
+            "message": "chore: auto-update members.json [skip ci]",
+            "content": encoded
+        }
+        if sha:
+            payload["sha"] = sha
+        put_r = requests.put(
+            "https://api.github.com/repos/darkblisss/donations-bot/contents/members.json",
+            headers=headers, json=payload, timeout=10
+        )
+        if put_r.status_code in (200, 201):
+            print("[GitHub] members.json pushed successfully")
+        else:
+            print(f"[GitHub] Push failed: {put_r.status_code} {put_r.text}")
+    except Exception as e:
+        print(f"[GitHub] Push error: {e}")
+
 def do_link(discord_id, ingame_name_input):
     try:
         token = get_access_token()
@@ -260,6 +295,7 @@ def do_link(discord_id, ingame_name_input):
     members = {k: v for k, v in members.items() if v != discord_id}
     members[matched_name] = discord_id
     save_members(members)
+    push_members_to_github()
     return f"You are all set! I have successfully linked **{matched_name}** to your Discord. Welcome to the guild, it is great to have you with us!"
 
 def do_self_unlink(discord_id):
@@ -269,6 +305,7 @@ def do_self_unlink(discord_id):
         return "You are not currently linked to any in-game name."
     del members[matched_key]
     save_members(members)
+    push_members_to_github()
     return f"All done. I have unlinked **{matched_key}** from your account as requested. We wish you the best on your journey!"
 
 def do_force_unlink(ingame_name_input):
@@ -278,6 +315,7 @@ def do_force_unlink(ingame_name_input):
         return f"No entry found for **{ingame_name_input}** in members.json."
     del members[matched_key]
     save_members(members)
+    push_members_to_github()
     return f"The member list has been updated. I have officially unlinked **{matched_key}** and cleared them from our records."
 
 def do_members_list():
