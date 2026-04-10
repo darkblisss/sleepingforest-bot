@@ -15,6 +15,8 @@ ROLE_ID = os.environ.get("WORLD_BOSS_ROLE_ID", "").strip()
 ERROR_WEBHOOK_URL = os.environ.get("ERROR_WEBHOOK_URL", "").strip()
 GH_PAT = os.environ.get("GH_PAT", "").strip()
 GH_REPO = "darkblisss/worldboss-bot"
+RENDER_API_KEY = os.environ.get("RENDER_API_KEY", "").strip()
+RENDER_SERVICE_ID = os.environ.get("RENDER_SERVICE_ID", "").strip()
 
 SEND_AT_MINUTES_BEFORE_SPAWN = 5
 LOOKAHEAD_MINUTES = 10
@@ -29,6 +31,32 @@ def send_error_alert(message):
             )
         except Exception:
             pass
+
+
+def update_render_secret(new_refresh_token):
+    if not RENDER_API_KEY or not RENDER_SERVICE_ID or not new_refresh_token:
+        return
+    headers = {"Authorization": f"Bearer {RENDER_API_KEY}", "Accept": "application/json", "Content-Type": "application/json"}
+    try:
+        r = requests.get(f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/env-vars", headers=headers, timeout=10)
+        r.raise_for_status()
+        current = r.json()
+        updated = []
+        found = False
+        for item in current:
+            ev = item.get("envVar", {})
+            if ev.get("key") == "DEGEN_REFRESH_TOKEN":
+                updated.append({"key": "DEGEN_REFRESH_TOKEN", "value": new_refresh_token})
+                found = True
+            else:
+                updated.append({"key": ev["key"], "value": ev.get("value", "")})
+        if not found:
+            updated.append({"key": "DEGEN_REFRESH_TOKEN", "value": new_refresh_token})
+        put_r = requests.put(f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/env-vars", headers=headers, json=updated, timeout=10)
+        put_r.raise_for_status()
+        print("✅ Render env var synced")
+    except Exception as e:
+        send_error_alert(f"⚠️ Failed to sync DEGEN_REFRESH_TOKEN to Render: {e}")
 
 def update_github_secret(new_refresh_token):
     if not GH_PAT or not new_refresh_token:
@@ -68,6 +96,8 @@ def update_github_secret(new_refresh_token):
                 time.sleep(2)
         if not success:
             send_error_alert(f"⛔ Failed to save new DEGEN_REFRESH_TOKEN to {repo} after 3 attempts — chain will break in 24h")
+
+    update_render_secret(new_refresh_token)
 
 def refresh_access_token():
     refresh_token = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
