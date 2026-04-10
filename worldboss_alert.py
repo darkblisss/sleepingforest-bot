@@ -97,8 +97,6 @@ def update_github_secret(new_refresh_token):
         if not success:
             send_error_alert(f"⛔ Failed to save new DEGEN_REFRESH_TOKEN to {repo} after 3 attempts — chain will break in 24h")
 
-    update_render_secret(new_refresh_token)
-
 def refresh_access_token():
     refresh_token = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
     if not refresh_token:
@@ -129,7 +127,6 @@ def refresh_access_token():
         print(f"[TOKEN] New refresh token ending in: ...{new_refresh[-4:]}")
         same = new_refresh == refresh_token
         print(f"[TOKEN] Token changed: {'NO — SAME TOKEN, rotation may be broken!' if same else 'YES — token rotated successfully'}")
-        same = new_refresh == refresh_token
         update_github_secret(new_refresh)
         update_render_secret(new_refresh, token_changed=not same)
     else:
