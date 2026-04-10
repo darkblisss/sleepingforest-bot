@@ -19,3 +19,5 @@ jobs:
           WORLD_BOSS_ROLE_ID: ${{ secrets.WORLD_BOSS_ROLE_ID }}
           GH_PAT: ${{ secrets.GH_PAT }}
           ERROR_WEBHOOK_URL: ${{ secrets.ERROR_WEBHOOK_URL }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
