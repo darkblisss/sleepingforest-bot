@@ -260,7 +260,7 @@ def do_link(discord_id, ingame_name_input):
     members = {k: v for k, v in members.items() if v != discord_id}
     members[matched_name] = discord_id
     save_members(members)
-    return f"Linked **{matched_name}** to your Discord account."
+    return f"You are all set! I have successfully linked **{matched_name}** to your Discord. Welcome to the guild, it is great to have you with us!"
 
 def do_self_unlink(discord_id):
     members = load_members()
@@ -269,7 +269,7 @@ def do_self_unlink(discord_id):
         return "You are not currently linked to any in-game name."
     del members[matched_key]
     save_members(members)
-    return f"Unlinked **{matched_key}** from your Discord account."
+    return f"All done. I have unlinked **{matched_key}** from your account as requested. We wish you the best on your journey!"
 
 def do_force_unlink(ingame_name_input):
     members = load_members()
@@ -278,7 +278,7 @@ def do_force_unlink(ingame_name_input):
         return f"No entry found for **{ingame_name_input}** in members.json."
     del members[matched_key]
     save_members(members)
-    return f"Force-unlinked **{matched_key}** from members.json."
+    return f"The member list has been updated. I have officially unlinked **{matched_key}** and cleared them from our records."
 
 def do_members_list():
     members = load_members()
