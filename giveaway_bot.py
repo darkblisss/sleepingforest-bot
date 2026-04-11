@@ -408,8 +408,8 @@ async def on_message(message):
                 await message.channel.send(f"Error: {e}")
         return
 
-    # Owner-only commands
-    if not is_owner:
+    # Owner or admin commands
+    if not is_owner and not has_admin_role(message.author):
         return
 
     if content.lower() == "!members":
