@@ -429,142 +429,6 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(f"Error: {e}")
 
-
-        os.environ["DEGEN_REFRESH_TOKEN"] = new_token
-        render_api_key = os.environ.get("RENDER_API_KEY", "").strip()
-        svc_id = os.environ.get("RENDER_SERVICE_ID_DONATIONS", "").strip()
-        lines = ["Token update results:", "IN-MEMORY: updated immediately (active now)"]
-        if render_api_key and svc_id:
-            try:
-                r = requests.get(
-                    f"https://api.render.com/v1/services/{svc_id}/env-vars",
-                    headers={"Authorization": f"Bearer {render_api_key}", "Accept": "application/json"},
-                    timeout=15
-                )
-                existing = r.json() if r.status_code == 200 else []
-                updated_vars = []
-                found = False
-                for item in existing:
-                    ev = item.get("envVar", item)
-                    k = ev.get("key", "")
-                    v = new_token if k == "DEGEN_REFRESH_TOKEN" else ev.get("value", "")
-                    if k == "DEGEN_REFRESH_TOKEN":
-                        found = True
-                    updated_vars.append({"key": k, "value": v})
-                if not found:
-                    updated_vars.append({"key": "DEGEN_REFRESH_TOKEN", "value": new_token})
-                put_r = requests.put(
-                    f"https://api.render.com/v1/services/{svc_id}/env-vars",
-                    headers={"Authorization": f"Bearer {render_api_key}", "Accept": "application/json", "Content-Type": "application/json"},
-                    json=updated_vars,
-                    timeout=15
-                )
-                if put_r.status_code in (200, 201):
-                    lines.append("RENDER: env var updated (persists after restart)")
-                else:
-                    lines.append(f"RENDER: update failed HTTP {put_r.status_code}")
-            except Exception as e:
-                lines.append(f"RENDER: error - {e}")
-        else:
-            lines.append("RENDER: RENDER_API_KEY or service ID not set — in-memory only")
-        msg = "\n".join(lines)
-        try:
-            await message.author.send(msg)
-        except Exception:
-            await message.channel.send(f"{message.author.mention}\n{msg}")
-        return
-
-        os.environ["DEGEN_REFRESH_TOKEN"] = new_token
-        lines = ["Token update results:", "IN-MEMORY: updated immediately (active now)"]
-
-        # Update all 3 GitHub secrets
-        import base64
-        from nacl import encoding, public as nacl_public
-        import time as _time
-        gh_pat = os.environ.get("GH_PAT", "").strip()
-        repos = [
-            "darkblisss/worldboss-bot",
-            "darkblisss/donations-bot",
-            "darkblisss/guild-activity-checker",
-        ]
-        if gh_pat:
-            for repo in repos:
-                success = False
-                for attempt in range(3):
-                    try:
-                        r = requests.get(
-                            f"https://api.github.com/repos/{repo}/actions/secrets/public-key",
-                            headers={"Authorization": f"Bearer {gh_pat}"},
-                            timeout=10,
-                        )
-                        r.raise_for_status()
-                        key_data = r.json()
-                        pub_key = nacl_public.PublicKey(key_data["key"].encode(), encoding.Base64Encoder)
-                        box = nacl_public.SealedBox(pub_key)
-                        encrypted = base64.b64encode(box.encrypt(new_token.encode())).decode()
-                        put_r = requests.put(
-                            f"https://api.github.com/repos/{repo}/actions/secrets/DEGEN_REFRESH_TOKEN",
-                            headers={"Authorization": f"Bearer {gh_pat}"},
-                            json={"encrypted_value": encrypted, "key_id": key_data["key_id"]},
-                            timeout=10,
-                        )
-                        if put_r.status_code in (201, 204):
-                            lines.append(f"GITHUB {repo.split('/')[1]}: secret updated")
-                            success = True
-                            break
-                        else:
-                            _time.sleep(2)
-                    except Exception as e:
-                        _time.sleep(2)
-                if not success:
-                    lines.append(f"GITHUB {repo.split('/')[1]}: FAILED after 3 attempts")
-        else:
-            lines.append("GITHUB: GH_PAT not set — secrets not updated")
-
-        # Update Render env var
-        render_api_key = os.environ.get("RENDER_API_KEY", "").strip()
-        svc_id = os.environ.get("RENDER_SERVICE_ID_DONATIONS", "").strip()
-        if render_api_key and svc_id:
-            try:
-                r = requests.get(
-                    f"https://api.render.com/v1/services/{svc_id}/env-vars",
-                    headers={"Authorization": f"Bearer {render_api_key}", "Accept": "application/json"},
-                    timeout=15
-                )
-                existing = r.json() if r.status_code == 200 else []
-                updated_vars = []
-                found = False
-                for item in existing:
-                    ev = item.get("envVar", item)
-                    k = ev.get("key", "")
-                    v = new_token if k == "DEGEN_REFRESH_TOKEN" else ev.get("value", "")
-                    if k == "DEGEN_REFRESH_TOKEN":
-                        found = True
-                    updated_vars.append({"key": k, "value": v})
-                if not found:
-                    updated_vars.append({"key": "DEGEN_REFRESH_TOKEN", "value": new_token})
-                put_r = requests.put(
-                    f"https://api.render.com/v1/services/{svc_id}/env-vars",
-                    headers={"Authorization": f"Bearer {render_api_key}", "Accept": "application/json", "Content-Type": "application/json"},
-                    json=updated_vars,
-                    timeout=15
-                )
-                if put_r.status_code in (200, 201):
-                    lines.append("RENDER: env var updated (persists after restart)")
-                else:
-                    lines.append(f"RENDER: update failed HTTP {put_r.status_code}")
-            except Exception as e:
-                lines.append(f"RENDER: error - {e}")
-        else:
-            lines.append("RENDER: API key or service ID not set — skipped")
-
-        msg = "\n".join(lines)
-        try:
-            await message.author.send(msg)
-        except Exception:
-            await message.channel.send(f"{message.author.mention}\n{msg}")
-        return
-
     elif content.lower().startswith("!settoken "):
         new_token = content[10:].strip()
         if len(new_token) < 20:
@@ -575,8 +439,6 @@ async def on_message(message):
             return
         os.environ["DEGEN_REFRESH_TOKEN"] = new_token
         lines = ["Token update results:", "IN-MEMORY: updated immediately (active now)"]
-
-        # Update all 3 GitHub secrets
         import base64
         from nacl import encoding, public as nacl_public
         import time as _time
@@ -619,8 +481,6 @@ async def on_message(message):
                     lines.append(f"GITHUB {repo.split('/')[1]}: FAILED after 3 attempts")
         else:
             lines.append("GITHUB: GH_PAT not set — secrets not updated")
-
-        # Update Render env var
         render_api_key = os.environ.get("RENDER_API_KEY", "").strip()
         svc_id = os.environ.get("RENDER_SERVICE_ID_DONATIONS", "").strip()
         if render_api_key and svc_id:
@@ -649,14 +509,13 @@ async def on_message(message):
                     timeout=15
                 )
                 if put_r.status_code in (200, 201):
-                    lines.append("RENDER: env var updated (persists after restart)")
+                    lines.append("RENDER: env var updated")
                 else:
                     lines.append(f"RENDER: update failed HTTP {put_r.status_code}")
             except Exception as e:
                 lines.append(f"RENDER: error - {e}")
         else:
             lines.append("RENDER: API key or service ID not set — skipped")
-
         msg = "\n".join(lines)
         try:
             await message.author.send(msg)
