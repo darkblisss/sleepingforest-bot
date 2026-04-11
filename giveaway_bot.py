@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import random
 import asyncio
@@ -351,6 +352,16 @@ async def weekly_giveaway():
     print(f"[GIVEAWAY] Running for week {week_key} at {now}")
     await asyncio.get_running_loop().run_in_executor(None, run_giveaway_logic)
 
+LOG_WEBHOOK_URL = "https://discord.com/api/webhooks/1492516908149248251/ASkbVKGlyrWTLcu3rm7K9CTkuDsyGdnVY4bFN59fUAgCxIN1ehaqlkR3ETlbv_A1ypQJ"
+
+async def send_log(msg):
+    if not LOG_WEBHOOK_URL:
+        return
+    try:
+        requests.post(LOG_WEBHOOK_URL, json={"content": msg, "username": "SleepingForest Log"}, timeout=10)
+    except Exception:
+        pass
+
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
@@ -360,11 +371,35 @@ async def on_message(message):
     author_id = str(message.author.id)
     is_owner = author_id == OWNER_ID
 
-    # !link — members role only, result DMed
+    # !link — works in server and DMs, supports !link @mention CharName for admin/owner
     if content.lower().startswith("!link "):
-        if not has_members_role(message.author) and not is_owner:
-            return
-        ingame_name = content[6:].strip()
+        args = content[6:].strip()
+        is_dm = message.guild is None
+        guild_obj = bot.get_guild(int(DISCORD_GUILD_ID)) if DISCORD_GUILD_ID else None
+        acting_member = guild_obj.get_member(int(author_id)) if (is_dm and guild_obj) else (message.author if not is_dm else None)
+        is_admin = acting_member and has_admin_role(acting_member)
+        target_id = author_id
+        ingame_name = args
+        if args.startswith("<@") and (is_owner or is_admin):
+            m = re.match(r"<@!?(\d+)>\s+(.+)", args)
+            if m:
+                target_id = m.group(1)
+                ingame_name = m.group(2).strip()
+            else:
+                try:
+                    await message.author.send("Usage: `!link @user IngameName`")
+                except Exception:
+                    pass
+                return
+        else:
+            if not is_owner:
+                if not acting_member or not has_members_role(acting_member):
+                    if is_dm:
+                        try:
+                            await message.author.send("You need the Members role to link your account.")
+                        except Exception:
+                            pass
+                    return
         if not ingame_name:
             try:
                 await message.author.send("Usage: `!link YourIngameName`")
@@ -372,40 +407,68 @@ async def on_message(message):
                 pass
             return
         try:
-            result = await asyncio.get_running_loop().run_in_executor(None, do_link, author_id, ingame_name)
+            await asyncio.get_running_loop().run_in_executor(None, do_link, target_id, ingame_name)
+            if target_id == author_id:
+                confirm = f"You are all set! I have successfully linked **{ingame_name}** to your Discord. Glad to have you in the guild!"
+            else:
+                confirm = f"Done! **{ingame_name}** has been linked to <@{target_id}>."
             try:
-                await message.author.send(result)
+                await message.author.send(confirm)
             except Exception:
-                await message.channel.send(f"{message.author.mention} {result}")
+                if not is_dm:
+                    await message.channel.send(f"<@{target_id}> {confirm}")
+            await send_log(f"Linked: <@{target_id}> -> **{ingame_name}**")
         except Exception as e:
-            await message.channel.send(f"Error: {e}")
+            try:
+                await message.author.send(f"Something went wrong: {e}")
+            except Exception:
+                pass
         return
 
-    # !unlink — members role = unlinks themselves, owner = force unlinks by name
+    # !unlink — self unlink or admin force unlink by in-game name
     if content.lower() == "!unlink" or content.lower().startswith("!unlink "):
+        is_dm = message.guild is None
+        guild_obj = bot.get_guild(int(DISCORD_GUILD_ID)) if DISCORD_GUILD_ID else None
+        acting_member = guild_obj.get_member(int(author_id)) if (is_dm and guild_obj) else (message.author if not is_dm else None)
+        is_admin = acting_member and has_admin_role(acting_member)
         parts = content.split(None, 1)
         force_name = parts[1].strip() if len(parts) > 1 else None
-
-        if force_name and is_owner:
-            # Owner force-unlinking someone by in-game name
+        if force_name and (is_owner or is_admin):
             try:
-                result = await asyncio.get_running_loop().run_in_executor(None, do_force_unlink, force_name)
+                await asyncio.get_running_loop().run_in_executor(None, do_force_unlink, force_name)
+                confirm = f"The member list has been updated. I have officially unlinked **{force_name}** and cleared them from our records."
                 try:
-                    await message.author.send(result)
+                    await message.author.send(confirm)
                 except Exception:
-                    await message.channel.send(result)
+                    if not is_dm:
+                        await message.channel.send(confirm)
+                await send_log(f"Force-unlinked: **{force_name}**")
             except Exception as e:
-                await message.channel.send(f"Error: {e}")
-        elif not force_name and (has_members_role(message.author) or is_owner):
-            # Member unlinking themselves
+                try:
+                    await message.author.send(f"Something went wrong: {e}")
+                except Exception:
+                    pass
+        elif not force_name:
+            if not is_owner and (not acting_member or not has_members_role(acting_member)):
+                return
+            members_data = load_members()
+            charname = members_data.get(author_id, "your character")
+            if isinstance(charname, dict):
+                charname = charname.get("ingame_name", "your character")
             try:
-                result = await asyncio.get_running_loop().run_in_executor(None, do_self_unlink, author_id)
+                await asyncio.get_running_loop().run_in_executor(None, do_self_unlink, author_id)
+                confirm = f"All done. I have unlinked **{charname}** from your account as requested. We wish you the best on your journey!"
                 try:
-                    await message.author.send(result)
+                    await message.author.send(confirm)
                 except Exception:
-                    await message.channel.send(f"{message.author.mention} {result}")
+                    if not is_dm:
+                        await message.channel.send(f"{message.author.mention} {confirm}")
+                await send_log(f"Unlinked: <@{author_id}> -> **{charname}**")
             except Exception as e:
-                await message.channel.send(f"Error: {e}")
+                try:
+                    await message.author.send(f"Something went wrong: {e}")
+                except Exception:
+                    pass
         return
 
     # Owner or admin commands
@@ -529,6 +592,30 @@ async def on_message(message):
             await message.channel.send(result)
         except Exception as e:
             await message.channel.send(f"Error: {e}")
+
+@bot.event
+async def on_member_update(before, after):
+    before_roles = {str(r.id) for r in before.roles}
+    after_roles  = {str(r.id) for r in after.roles}
+    if MEMBERS_ROLE_ID not in before_roles and MEMBERS_ROLE_ID in after_roles:
+        try:
+            await after.send(
+                "Welcome to **SleepingForest**! It is great to have you with us.\n"
+                "We need you to link your in-game character so we know who you are and can ping you for guild events.\n\n"
+                "Just reply to this message with:\n"
+                "`!link YourIngameName`"
+            )
+        except Exception:
+            pass
+    if MEMBERS_ROLE_ID in before_roles and MEMBERS_ROLE_ID not in after_roles:
+        user_id = str(after.id)
+        members_data = load_members()
+        if user_id in members_data:
+            charname = members_data[user_id]
+            if isinstance(charname, dict):
+                charname = charname.get("ingame_name", user_id)
+            await asyncio.get_running_loop().run_in_executor(None, do_self_unlink, user_id)
+            await send_log(f"Auto-unlinked (role removed): <@{user_id}> -> **{charname}**")
 
 @bot.event
 async def on_ready():
