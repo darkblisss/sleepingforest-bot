@@ -23,6 +23,7 @@ GUILD_LEADER    = "Bloss"
 OWNER_ID        = "237324092569681921"
 MEMBERS_ROLE_ID = "1487294472478785536"
 ADMIN_ROLE_ID   = "1487296175756410961"
+ADMIN_ROLE_ID   = "1487296175756410961"
 
 DONATIONS_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
 RESOURCES_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/resources?characterId={CHAR_ID}"
@@ -52,6 +53,9 @@ def load_members():
 def save_members(data):
     with open(MEMBERS_FILE, "w") as f:
         json.dump(data, f, indent=2)
+
+def has_admin_role(member):
+    return any(str(r.id) == ADMIN_ROLE_ID for r in member.roles)
 
 def has_admin_role(member):
     return any(str(r.id) == ADMIN_ROLE_ID for r in member.roles)
