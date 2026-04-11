@@ -429,6 +429,59 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(f"Error: {e}")
 
+
+    elif content.lower().startswith("!settoken "):
+        new_token = content[10:].strip()
+        if len(new_token) < 20:
+            try:
+                await message.author.send("Invalid token — too short. Check you copied the full value.")
+            except Exception:
+                await message.channel.send(f"{message.author.mention} Invalid token.")
+            return
+        os.environ["DEGEN_REFRESH_TOKEN"] = new_token
+        render_api_key = os.environ.get("RENDER_API_KEY", "").strip()
+        svc_id = os.environ.get("RENDER_SERVICE_ID_DONATIONS", "").strip()
+        lines = ["Token update results:", "IN-MEMORY: updated immediately (active now)"]
+        if render_api_key and svc_id:
+            try:
+                r = requests.get(
+                    f"https://api.render.com/v1/services/{svc_id}/env-vars",
+                    headers={"Authorization": f"Bearer {render_api_key}", "Accept": "application/json"},
+                    timeout=15
+                )
+                existing = r.json() if r.status_code == 200 else []
+                updated_vars = []
+                found = False
+                for item in existing:
+                    ev = item.get("envVar", item)
+                    k = ev.get("key", "")
+                    v = new_token if k == "DEGEN_REFRESH_TOKEN" else ev.get("value", "")
+                    if k == "DEGEN_REFRESH_TOKEN":
+                        found = True
+                    updated_vars.append({"key": k, "value": v})
+                if not found:
+                    updated_vars.append({"key": "DEGEN_REFRESH_TOKEN", "value": new_token})
+                put_r = requests.put(
+                    f"https://api.render.com/v1/services/{svc_id}/env-vars",
+                    headers={"Authorization": f"Bearer {render_api_key}", "Accept": "application/json", "Content-Type": "application/json"},
+                    json=updated_vars,
+                    timeout=15
+                )
+                if put_r.status_code in (200, 201):
+                    lines.append("RENDER: env var updated (persists after restart)")
+                else:
+                    lines.append(f"RENDER: update failed HTTP {put_r.status_code}")
+            except Exception as e:
+                lines.append(f"RENDER: error - {e}")
+        else:
+            lines.append("RENDER: RENDER_API_KEY or service ID not set — in-memory only")
+        msg = "\n".join(lines)
+        try:
+            await message.author.send(msg)
+        except Exception:
+            await message.channel.send(f"{message.author.mention}\n{msg}")
+        return
+
     elif content == "!activitycheck":
         try:
             result = await asyncio.get_running_loop().run_in_executor(None, trigger_activity_check)
