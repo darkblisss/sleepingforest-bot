@@ -292,6 +292,86 @@ def push_members_to_github():
     except Exception as e:
         print(f"[GitHub] Push error: {e}")
 
+
+def get_degen_access_token():
+    r = requests.post("https://auth.degenidle.com/oauth2/token",
+        data={"grant_type": "refresh_token", "client_id": DEGEN_CLIENT_ID, "refresh_token": DEGEN_REFRESH_TOKEN}, timeout=15)
+    r.raise_for_status()
+    return r.json()["access_token"]
+
+def fetch_last_boss_raid():
+    token = get_degen_access_token()
+    h = {"Authorization": "Bearer " + token}
+    hist = requests.get("https://api-v1.degenidle.com/api/guild-worldboss/" + DEGEN_BOSS_GUILD_ID + "/history?limit=1&offset=0", headers=h, timeout=15).json()
+    raids = hist.get("data", [])
+    if not raids:
+        return None, None
+    raid = raids[0]
+    lb = requests.get("https://api-v1.degenidle.com/api/guild-worldboss/leaderboard/" + raid["id"] + "?characterId=" + DEGEN_BOSS_CHAR_ID, headers=h, timeout=15).json()
+    return raid, lb
+
+def build_boss_embed(raid, lb):
+    from datetime import datetime
+    boss = raid["boss"]
+    entries = lb.get("data", [])
+    total = float(raid["total_damage_dealt"]) if raid["total_damage_dealt"] else 0.0
+    hp_pct = (total / boss["max_hp"] * 100) if boss["max_hp"] else 0.0
+    defeated = raid["boss_defeated"]
+    def fmt(n):
+        if n is None: return "N/A"
+        n = float(n)
+        if n >= 1000000: return str(round(n/1000000, 2)) + "M"
+        if n >= 1000: return str(round(n/1000, 1)) + "K"
+        return str(round(n))
+    secs = None
+    if raid["spawn_time"] and raid["end_time"]:
+        s = datetime.fromisoformat(raid["spawn_time"].replace(" ","T").split("+")[0]+"+00:00")
+        e = datetime.fromisoformat(raid["end_time"].replace(" ","T").split("+")[0]+"+00:00")
+        secs = max(1, (e - s).total_seconds())
+    if secs:
+        m, sc = divmod(int(secs), 60)
+        dur = str(m) + "m " + str(sc) + "s" if m else str(sc) + "s"
+    else:
+        dur = "N/A"
+    dt = datetime.fromisoformat(raid["scheduled_time"].replace(" ","T").split("+")[0]+"+00:00")
+    date_str = dt.strftime("%d %b %Y")
+    init_id = raid["initiator_character_id"]
+    init_name = "Unknown"
+    for e in entries:
+        if e["character_id"] == init_id:
+            init_name = e["character_name"]
+            break
+    def bar(pct, w=16):
+        f = int(pct / 100 * w)
+        return "█" * f + "░" * (w - f)
+    outcome = "✅  BOSS DEFEATED" if defeated else "💀  Boss Survived"
+    color = 0x2ECC71 if defeated else 0xB43232
+    hp_val = "`[" + bar(hp_pct) + "]` **" + str(round(hp_pct,1)) + "% stripped**
+" + fmt(total) + " dealt  •  " + fmt(boss["max_hp"] - total) + " HP remaining"
+    if not entries:
+        part_val = "Nobody joined this raid."
+    else:
+        lines = []
+        for i, e in enumerate(entries):
+            dps = e["damage_dealt"] / secs if secs else 0
+            surv = "✔" if e["survived"] else "☠️ fell in battle"
+            crown = "👑 " if i == 0 else "     "
+            lines.append(crown + "**" + e["character_name"] + "**  —  " + fmt(e["damage_dealt"]) + "  •  " + fmt(dps) + "/s  •  " + str(round(e["percentage"],1)) + "%  " + surv)
+        part_val = "
+".join(lines)
+    return {
+        "title": "⚔️  " + boss["name"] + " Lv." + str(boss["level"]) + "  —  Raid Report",
+        "description": "**" + outcome + "**
+📅 " + date_str + "  •  ⏱️ " + dur + "
+🗡️ Initiated by **" + init_name + "**",
+        "color": color,
+        "fields": [
+            {"name": "Boss Health", "value": hp_val, "inline": False},
+            {"name": "Participants (" + str(len(entries)) + ")", "value": part_val, "inline": False},
+        ],
+        "footer": {"text": "Guild dealt " + fmt(total) + " to " + boss["name"] + "  •  SleepingForest"},
+    }
+
 def do_link(discord_id, ingame_name_input):
     try:
         token = get_access_token()
