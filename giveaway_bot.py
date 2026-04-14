@@ -10,6 +10,7 @@ from datetime import datetime, timezone, time, timedelta
 
 
 WEBHOOK_URL        = os.environ.get("DISCORD_GIVEAWAY_WEBHOOK", "").strip()
+LOGS_WEBHOOK_URL   = os.environ.get("DISCORD_LOGS_WEBHOOK", "").strip()
 BOT_TOKEN          = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
 DISCORD_GUILD_ID   = os.environ.get("DISCORD_GUILD_ID", "").strip()
 DONATIONS_ROLE_ID  = os.environ.get("DONATIONS_ROLE_ID", "").strip()
@@ -26,6 +27,7 @@ MEMBERS_ROLE_ID = "1487294472478785536"
 ADMIN_ROLE_ID   = "1487296175756410961"
 ADMIN_ROLE_ID   = "1487296175756410961"
 ADMIN_ROLE_ID   = "1487296175756410961"
+OFFICER_ROLE_ID = "1487294633150251089"
 
 DONATIONS_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
 RESOURCES_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/resources?characterId={CHAR_ID}"
@@ -57,13 +59,22 @@ def save_members(data):
         json.dump(data, f, indent=2)
 
 def has_admin_role(member):
+    if member is None or not hasattr(member, "roles"):
+        return False
+    return any(str(r.id) == ADMIN_ROLE_ID for r in member.roles)
+
+def has_admin_role(member):
+    if member is None or not hasattr(member, "roles"):
+        return False
     return any(str(r.id) == ADMIN_ROLE_ID for r in member.roles)
 
 def has_admin_role(member):
     return any(str(r.id) == ADMIN_ROLE_ID for r in member.roles)
 
-def has_admin_role(member):
-    return any(str(r.id) == ADMIN_ROLE_ID for r in member.roles)
+def has_officer_role(member):
+    if member is None or not hasattr(member, "roles"):
+        return False
+    return any(str(r.id) in (OFFICER_ROLE_ID, ADMIN_ROLE_ID) for r in member.roles)
 
 def has_members_role(member):
     return any(str(r.id) == MEMBERS_ROLE_ID for r in member.roles)
@@ -292,86 +303,6 @@ def push_members_to_github():
     except Exception as e:
         print(f"[GitHub] Push error: {e}")
 
-
-def get_degen_access_token():
-    r = requests.post("https://auth.degenidle.com/oauth2/token",
-        data={"grant_type": "refresh_token", "client_id": DEGEN_CLIENT_ID, "refresh_token": DEGEN_REFRESH_TOKEN}, timeout=15)
-    r.raise_for_status()
-    return r.json()["access_token"]
-
-def fetch_last_boss_raid():
-    token = get_degen_access_token()
-    h = {"Authorization": "Bearer " + token}
-    hist = requests.get("https://api-v1.degenidle.com/api/guild-worldboss/" + DEGEN_BOSS_GUILD_ID + "/history?limit=1&offset=0", headers=h, timeout=15).json()
-    raids = hist.get("data", [])
-    if not raids:
-        return None, None
-    raid = raids[0]
-    lb = requests.get("https://api-v1.degenidle.com/api/guild-worldboss/leaderboard/" + raid["id"] + "?characterId=" + DEGEN_BOSS_CHAR_ID, headers=h, timeout=15).json()
-    return raid, lb
-
-def build_boss_embed(raid, lb):
-    from datetime import datetime
-    boss = raid["boss"]
-    entries = lb.get("data", [])
-    total = float(raid["total_damage_dealt"]) if raid["total_damage_dealt"] else 0.0
-    hp_pct = (total / boss["max_hp"] * 100) if boss["max_hp"] else 0.0
-    defeated = raid["boss_defeated"]
-    def fmt(n):
-        if n is None: return "N/A"
-        n = float(n)
-        if n >= 1000000: return str(round(n/1000000, 2)) + "M"
-        if n >= 1000: return str(round(n/1000, 1)) + "K"
-        return str(round(n))
-    secs = None
-    if raid["spawn_time"] and raid["end_time"]:
-        s = datetime.fromisoformat(raid["spawn_time"].replace(" ","T").split("+")[0]+"+00:00")
-        e = datetime.fromisoformat(raid["end_time"].replace(" ","T").split("+")[0]+"+00:00")
-        secs = max(1, (e - s).total_seconds())
-    if secs:
-        m, sc = divmod(int(secs), 60)
-        dur = str(m) + "m " + str(sc) + "s" if m else str(sc) + "s"
-    else:
-        dur = "N/A"
-    dt = datetime.fromisoformat(raid["scheduled_time"].replace(" ","T").split("+")[0]+"+00:00")
-    date_str = dt.strftime("%d %b %Y")
-    init_id = raid["initiator_character_id"]
-    init_name = "Unknown"
-    for e in entries:
-        if e["character_id"] == init_id:
-            init_name = e["character_name"]
-            break
-    def bar(pct, w=16):
-        f = int(pct / 100 * w)
-        return "█" * f + "░" * (w - f)
-    outcome = "✅  BOSS DEFEATED" if defeated else "💀  Boss Survived"
-    color = 0x2ECC71 if defeated else 0xB43232
-    hp_val = "`[" + bar(hp_pct) + "]` **" + str(round(hp_pct,1)) + "% stripped**
-" + fmt(total) + " dealt  •  " + fmt(boss["max_hp"] - total) + " HP remaining"
-    if not entries:
-        part_val = "Nobody joined this raid."
-    else:
-        lines = []
-        for i, e in enumerate(entries):
-            dps = e["damage_dealt"] / secs if secs else 0
-            surv = "✔" if e["survived"] else "☠️ fell in battle"
-            crown = "👑 " if i == 0 else "     "
-            lines.append(crown + "**" + e["character_name"] + "**  —  " + fmt(e["damage_dealt"]) + "  •  " + fmt(dps) + "/s  •  " + str(round(e["percentage"],1)) + "%  " + surv)
-        part_val = "
-".join(lines)
-    return {
-        "title": "⚔️  " + boss["name"] + " Lv." + str(boss["level"]) + "  —  Raid Report",
-        "description": "**" + outcome + "**
-📅 " + date_str + "  •  ⏱️ " + dur + "
-🗡️ Initiated by **" + init_name + "**",
-        "color": color,
-        "fields": [
-            {"name": "Boss Health", "value": hp_val, "inline": False},
-            {"name": "Participants (" + str(len(entries)) + ")", "value": part_val, "inline": False},
-        ],
-        "footer": {"text": "Guild dealt " + fmt(total) + " to " + boss["name"] + "  •  SleepingForest"},
-    }
-
 def do_link(discord_id, ingame_name_input):
     try:
         token = get_access_token()
@@ -442,6 +373,160 @@ async def send_log(msg):
     except Exception:
         pass
 
+
+# ── Boss stats helpers ──────────────────────────────────────────────────────
+
+def fetch_last_boss_raid():
+    token = get_access_token()
+    h = {
+        "Authorization": "Bearer " + token,
+        "accept": "application/json",
+        "origin": "https://degenidle.com",
+        "referer": "https://degenidle.com/",
+    }
+    hist = requests.get(
+        BASE + "/guild-worldboss/" + DEGEN_GUILD_ID + "/history?limit=1&offset=0",
+        headers=h, timeout=15
+    ).json()
+    raids = hist.get("data", [])
+    if not raids:
+        return None, None, {}
+    raid = raids[0]
+    lb = requests.get(
+        BASE + "/guild-worldboss/leaderboard/" + raid["id"] + "?characterId=" + CHAR_ID,
+        headers=h, timeout=15
+    ).json()
+    try:
+        guild_data = requests.get(GUILD_API, headers=h, timeout=15).json()
+        members = {
+            m["character_id"]: m["character_name"]
+            for m in (guild_data.get("members") or [])
+            if m.get("character_id") and m.get("character_name")
+        }
+    except Exception:
+        members = {}
+    return raid, lb, members
+
+
+def fetch_previous_boss_raid():
+    token = get_access_token()
+    h = {
+        "Authorization": "Bearer " + token,
+        "accept": "application/json",
+        "origin": "https://degenidle.com",
+        "referer": "https://degenidle.com/",
+    }
+    hist = requests.get(
+        BASE + "/guild-worldboss/" + DEGEN_GUILD_ID + "/history?limit=2&offset=0",
+        headers=h, timeout=15
+    ).json()
+    raids = hist.get("data", [])
+    if len(raids) < 2:
+        return None, None, {}
+    raid = raids[1]
+    lb = requests.get(
+        BASE + "/guild-worldboss/leaderboard/" + raid["id"] + "?characterId=" + CHAR_ID,
+        headers=h, timeout=15
+    ).json()
+    try:
+        guild_data = requests.get(GUILD_API, headers=h, timeout=15).json()
+        members = {
+            m["character_id"]: m["character_name"]
+            for m in (guild_data.get("members") or [])
+            if m.get("character_id") and m.get("character_name")
+        }
+    except Exception:
+        members = {}
+    return raid, lb, members
+
+
+def build_boss_embed(raid, lb, members=None):
+    from datetime import datetime
+    boss = raid["boss"]
+    entries = lb.get("data", [])
+    total = float(raid["total_damage_dealt"]) if raid["total_damage_dealt"] else 0.0
+    hp_pct = (total / boss["max_hp"] * 100) if boss["max_hp"] else 0.0
+    hp_remaining_pct = 100.0 - hp_pct
+    defeated = raid["boss_defeated"]
+
+    def fmt(n):
+        if n is None:
+            return "N/A"
+        n = float(n)
+        if n >= 1_000_000:
+            return str(round(n / 1_000_000, 2)) + "M"
+        if n >= 1_000:
+            return str(round(n / 1_000, 1)) + "K"
+        return str(round(n))
+
+    secs = None
+    if raid["spawn_time"] and raid["end_time"]:
+        s = datetime.fromisoformat(raid["spawn_time"].replace(" ", "T").split("+")[0] + "+00:00")
+        e = datetime.fromisoformat(raid["end_time"].replace(" ", "T").split("+")[0] + "+00:00")
+        secs = max(1, (e - s).total_seconds())
+
+    if secs:
+        mins, sc = divmod(int(secs), 60)
+        dur = str(mins) + "m " + str(sc) + "s" if mins else str(sc) + "s"
+    else:
+        dur = "N/A"
+
+    dt = datetime.fromisoformat(raid["scheduled_time"].replace(" ", "T").split("+")[0] + "+00:00")
+    date_str = dt.strftime("%d %b %Y")
+
+    init_id = raid.get("initiator_character_id", "")
+    init_name = "Unknown"
+    if members and init_id in members:
+        init_name = members[init_id]
+    else:
+        for e in entries:
+            if e.get("character_id") == init_id:
+                init_name = e["character_name"]
+                break
+
+    outcome      = "BOSS DEFEATED" if defeated else "Boss Survived"
+    outcome_icon = "\u2705" if defeated else "\u274c"
+    color        = 0x2ECC71 if defeated else 0xB43232
+
+    def bar(pct, w=14):
+        f = int(pct / 100 * w)
+        return chr(9608) * f + chr(9617) * (w - f)
+
+    hp_bar = "`[" + bar(hp_remaining_pct) + "]` **" + str(round(hp_remaining_pct, 1)) + "% HP remaining**"
+    hp_val = hp_bar + chr(10) + fmt(boss["max_hp"] - total) + " HP left"
+
+    if not entries:
+        part_val = "Nobody joined this raid."
+    else:
+        lines = []
+        for i, e in enumerate(entries):
+            dps    = e["damage_dealt"] / secs if secs else 0
+            status = "\u2705" if e["survived"] else "\U0001f480"
+            rank   = ["#1", "#2", "#3"][i] if i < 3 else ("#" + str(i + 1))
+            lines.append(
+                rank + " **" + e["character_name"] + "**"
+                + "  \u00b7  " + fmt(e["damage_dealt"]) + " DMG"
+                + "  \u00b7  " + fmt(dps) + "/s"
+                + "  \u00b7  " + str(round(e["percentage"], 1)) + "%"
+                + "  " + status
+            )
+        part_val = chr(10).join(lines)
+
+    return {
+        "title": boss["name"] + " Lv." + str(boss["level"]) + " \u2500 Raid Report",
+        "description": outcome_icon + " **" + outcome + "**",
+        "color": color,
+        "fields": [
+            {"name": "\U0001f4c5 Date",         "value": date_str,              "inline": True},
+            {"name": "\u23f1 Duration",          "value": dur,                   "inline": True},
+            {"name": "\u2694\ufe0f Initiated by", "value": "**" + init_name + "**", "inline": True},
+            {"name": "Boss HP",                   "value": hp_val,                "inline": False},
+            {"name": "Participants (" + str(len(entries)) + ")", "value": part_val, "inline": False},
+        ],
+        "footer": {"text": "SleepingForest  \u00b7  " + boss["name"] + " Lv." + str(boss["level"])},
+    }
+
+
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
@@ -454,6 +539,20 @@ async def on_message(message):
     # !link — works in server and DMs, supports !link @mention CharName for admin/owner
     if content.lower().startswith("!link "):
         args = content[6:].strip()
+        # Admin/owner: !link CharName DiscordID (plain numeric ID)
+        _lparts = args.rsplit(None, 1)
+        if (len(_lparts) == 2 and _lparts[1].isdigit()
+                and len(_lparts[1]) >= 15 and (is_owner or is_admin)):
+            _ingame   = _lparts[0].strip()
+            _tid      = _lparts[1]
+            await asyncio.get_running_loop().run_in_executor(
+                None, do_link, _tid, _ingame
+            )
+            await message.channel.send(f"Done! **{_ingame}** has been linked to <@{_tid}>.")
+            await send_log(
+                f"Force-linked by ID: **{_ingame}** \u2192 <@{_tid}> (by <@{author_id}>)"
+            )
+            return
         is_dm = message.guild is None
         guild_obj = bot.get_guild(int(DISCORD_GUILD_ID)) if DISCORD_GUILD_ID else None
         acting_member = guild_obj.get_member(int(author_id)) if (is_dm and guild_obj) else (message.author if not is_dm else None)
@@ -672,6 +771,136 @@ async def on_message(message):
             await message.channel.send(result)
         except Exception as e:
             await message.channel.send(f"Error: {e}")
+
+
+    elif content.lower() == "!botcommands":
+        guild_obj4 = bot.get_guild(int(DISCORD_GUILD_ID)) if DISCORD_GUILD_ID else None
+        acting4 = guild_obj4.get_member(int(author_id)) if guild_obj4 else None
+        _is_officer = has_officer_role(acting4)
+        _is_admin = has_admin_role(acting4)
+
+        embed = discord.Embed(
+            title="SleepingForest Bot Commands",
+            description="Commands available for your current roles.",
+            color=0x958AEA
+        )
+
+        embed.add_field(
+            name="🌸 Members",
+            value=(
+                "`!link YourIngameName`\n"
+                "Link your Discord to your in-game character\n\n"
+                "`!unlink`\n"
+                "Unlink your own account"
+            ),
+            inline=False
+        )
+
+        if _is_officer or _is_admin or is_owner:
+            embed.add_field(
+                name="🌿 Officers",
+                value=(
+                    "`!bossstats`\n"
+                    "Post the latest boss raid report to logs\n\n"
+                    "`!previousboss`\n"
+                    "Post the previous boss raid report to logs"
+                ),
+                inline=False
+            )
+
+        if _is_admin or is_owner:
+            embed.add_field(
+                name="✨ Admins",
+                value=(
+                    "`!link @user IngameName`\n"
+                    "Link another user by mention\n\n"
+                    "`!link CharName DiscordID`\n"
+                    "Link a user by raw Discord ID\n\n"
+                    "`!unlink CharName`\n"
+                    "Force-unlink any member\n\n"
+                    "`!members`\n"
+                    "List all linked members\n\n"
+                    "`!activitycheck`\n"
+                    "Trigger the activity check workflow"
+                ),
+                inline=False
+            )
+
+        if is_owner:
+            embed.add_field(
+                name="👑 Owner",
+                value=(
+                    "`!giveaway`\n"
+                    "Manually trigger the weekly giveaway\n\n"
+                    "`!settoken`\n"
+                    "Update the DegenIdle API token"
+                ),
+                inline=False
+            )
+
+        embed.set_footer(text="Role-aware command list")
+        await message.channel.send(embed=embed)
+        return
+
+    elif content.lower() == "!bossstats":
+        guild_obj2 = bot.get_guild(int(DISCORD_GUILD_ID)) if DISCORD_GUILD_ID else None
+        acting2 = guild_obj2.get_member(int(author_id)) if guild_obj2 else None
+        if not is_owner and not has_officer_role(acting2):
+            await message.channel.send("You need the Officer role to use this command.")
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            raid, lb, members = await loop.run_in_executor(None, fetch_last_boss_raid)
+            if not raid:
+                await message.channel.send("No raid history found.")
+                return
+            embed_dict = build_boss_embed(raid, lb, members)
+            try:
+                if not LOGS_WEBHOOK_URL:
+                    await message.channel.send("DISCORD_LOGS_WEBHOOK is not set.")
+                    return
+                r = requests.post(LOGS_WEBHOOK_URL, json={"embeds": [embed_dict]}, timeout=15)
+                r.raise_for_status()
+            except Exception as e:
+                await message.channel.send(f"Failed to post to logs: `{e}`")
+                return
+            await message.channel.send("Boss stats posted!")
+        except Exception as e:
+            try:
+                await message.channel.send(f"Error: `{e}`")
+            except Exception:
+                pass
+        return
+
+    elif content.lower() == "!previousboss":
+        guild_obj3 = bot.get_guild(int(DISCORD_GUILD_ID)) if DISCORD_GUILD_ID else None
+        acting3 = guild_obj3.get_member(int(author_id)) if guild_obj3 else None
+        if not is_owner and not has_officer_role(acting3):
+            await message.channel.send("You need the Officer role to use this command.")
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            raid, lb, members = await loop.run_in_executor(None, fetch_previous_boss_raid)
+            if not raid:
+                await message.channel.send("No previous boss raid found.")
+                return
+            embed_dict = build_boss_embed(raid, lb, members)
+            try:
+                if not LOGS_WEBHOOK_URL:
+                    await message.channel.send("DISCORD_LOGS_WEBHOOK is not set.")
+                    return
+                r = requests.post(LOGS_WEBHOOK_URL, json={"embeds": [embed_dict]}, timeout=15)
+                r.raise_for_status()
+            except Exception as e:
+                await message.channel.send(f"Failed to post to logs: `{e}`")
+                return
+            await message.channel.send("Previous boss stats posted!")
+        except Exception as e:
+            try:
+                await message.channel.send(f"Error: `{e}`")
+            except Exception:
+                pass
+        return
 
 @bot.event
 async def on_member_update(before, after):
