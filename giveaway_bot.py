@@ -7,7 +7,7 @@ import requests
 import discord
 from discord.ext import tasks
 from datetime import datetime, timezone, time, timedelta
-from keep_alive import keep_alive
+
 
 WEBHOOK_URL        = os.environ.get("DISCORD_GIVEAWAY_WEBHOOK", "").strip()
 BOT_TOKEN          = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
@@ -472,7 +472,7 @@ async def on_message(message):
         return
 
     # Owner or admin commands
-    if not is_owner and not has_admin_role(message.author):
+    if not is_owner and not (message.guild and has_admin_role(message.guild.get_member(message.author.id) or message.author)):
         return
 
     if content.lower() == "!members":
@@ -623,5 +623,5 @@ async def on_ready():
     if not weekly_giveaway.is_running():
         weekly_giveaway.start()
 
-keep_alive()
+
 bot.run(BOT_TOKEN)
