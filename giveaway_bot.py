@@ -4,7 +4,9 @@ import json
 import random
 import asyncio
 import requests
+import threading
 import discord
+from flask import Flask
 from discord.ext import tasks
 from datetime import datetime, timezone, time, timedelta
 
@@ -39,6 +41,20 @@ intents.members = True
 bot = discord.Client(intents=intents)
 
 last_run_week = None
+
+# ── Flask keep-alive ────────────────────────────────────────────────────────
+flask_app = Flask(__name__)
+
+@flask_app.route("/")
+def health():
+    return "OK", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    flask_app.run(host="0.0.0.0", port=port)
+
+threading.Thread(target=run_flask, daemon=True).start()
+# ────────────────────────────────────────────────────────────────────────────
 
 def get_week_ending():
     now = datetime.now(timezone.utc)
@@ -179,10 +195,7 @@ def find_eligible(donations, daily_limit, discord_map, role_ids, debug=False):
     for player in donations:
         name = get_player_name(player)
         count = player.get("count", 0)
-
-        # Bloss always qualifies as long as they are linked and have the role
         is_leader = (name == GUILD_LEADER)
-
         if not is_leader and count < threshold:
             log(f"[GIVEAWAY] {name}: {count} — below threshold, excluded")
             continue
@@ -270,7 +283,6 @@ def trigger_activity_check():
         return "Activity check triggered — results in Discord shortly"
     return f"Failed: {r.status_code} {r.text}"
 
-
 def push_members_to_github():
     if not GH_PAT:
         print("[WARN] GH_PAT not set — skipping members.json push to GitHub")
@@ -347,7 +359,7 @@ def do_members_list():
     members = load_members()
     if not members:
         return "members.json is empty."
-    lines = [f"**{name}** → <@{did}>\" for name, did in sorted(members.items())"]
+    lines = [f"**{name}** → <@{did}>" for name, did in sorted(members.items())]
     return f"**Linked members ({len(lines)}):**\n" + "\n".join(lines)
 
 @tasks.loop(time=GIVEAWAY_TIME)
@@ -373,9 +385,6 @@ async def send_log(msg):
         requests.post(LOG_WEBHOOK_URL, json={"content": msg, "username": "SleepingForest Log"}, timeout=10)
     except Exception:
         pass
-
-
-# ── Boss stats helpers ──────────────────────────────────────────────────────
 
 def fetch_last_boss_raid():
     token = get_access_token()
@@ -408,7 +417,6 @@ def fetch_last_boss_raid():
         members = {}
     return raid, lb, members
 
-
 def fetch_previous_boss_raid():
     token = get_access_token()
     h = {
@@ -440,9 +448,7 @@ def fetch_previous_boss_raid():
         members = {}
     return raid, lb, members
 
-
 def build_boss_embed(raid, lb, members=None):
-    from datetime import datetime
     boss = raid["boss"]
     entries = lb.get("data", [])
     total = float(raid["total_damage_dealt"]) if raid["total_damage_dealt"] else 0.0
@@ -527,7 +533,6 @@ def build_boss_embed(raid, lb, members=None):
         "footer": {"text": "SleepingForest  \u00b7  " + boss["name"] + " Lv." + str(boss["level"])},
     }
 
-
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
@@ -540,22 +545,18 @@ async def on_message(message):
     if content.lower().startswith("!link "):
         args = content[6:].strip()
         _lparts = args.rsplit(None, 1)
-        if (len(_lparts) == 2 and _lparts[1].isdigit()
-                and len(_lparts[1]) >= 15 and (is_owner or is_admin)):
-            _ingame   = _lparts[0].strip()
-            _tid      = _lparts[1]
-            await asyncio.get_running_loop().run_in_executor(
-                None, do_link, _tid, _ingame
-            )
-            await message.channel.send(f"Done! **{_ingame}** has been linked to <@{_tid}>.")
-            await send_log(
-                f"Force-linked by ID: **{_ingame}** \u2192 <@{_tid}> (by <@{author_id}>)"
-            )
-            return
         is_dm = message.guild is None
         guild_obj = bot.get_guild(int(DISCORD_GUILD_ID)) if DISCORD_GUILD_ID else None
         acting_member = guild_obj.get_member(int(author_id)) if (is_dm and guild_obj) else (message.author if not is_dm else None)
         is_admin = acting_member and has_admin_role(acting_member)
+        if (len(_lparts) == 2 and _lparts[1].isdigit()
+                and len(_lparts[1]) >= 15 and (is_owner or is_admin)):
+            _ingame = _lparts[0].strip()
+            _tid    = _lparts[1]
+            await asyncio.get_running_loop().run_in_executor(None, do_link, _tid, _ingame)
+            await message.channel.send(f"Done! **{_ingame}** has been linked to <@{_tid}>.")
+            await send_log(f"Force-linked by ID: **{_ingame}** \u2192 <@{_tid}> (by <@{author_id}>)")
+            return
         target_id = author_id
         ingame_name = args
         if args.startswith("<@") and (is_owner or is_admin):
@@ -629,9 +630,7 @@ async def on_message(message):
             if not is_owner and (not acting_member or not has_members_role(acting_member)):
                 return
             members_data = load_members()
-            charname = members_data.get(author_id, "your character")
-            if isinstance(charname, dict):
-                charname = charname.get("ingame_name", "your character")
+            charname = next((k for k, v in members_data.items() if v == author_id), "your character")
             try:
                 await asyncio.get_running_loop().run_in_executor(None, do_self_unlink, author_id)
                 confirm = f"All done. I have unlinked **{charname}** from your account as requested. We wish you the best on your journey!"
@@ -739,7 +738,6 @@ async def on_message(message):
         acting4 = guild_obj4.get_member(int(author_id)) if guild_obj4 else None
         _is_officer = has_officer_role(acting4)
         _is_admin = has_admin_role(acting4)
-
         embed = discord.Embed(
             title="SleepingForest Bot Commands",
             description="Commands available for your current roles.",
@@ -811,21 +809,14 @@ async def on_message(message):
                 await message.channel.send("No raid history found.")
                 return
             embed_dict = build_boss_embed(raid, lb, members)
-            try:
-                if not LOGS_WEBHOOK_URL:
-                    await message.channel.send("DISCORD_LOGS_WEBHOOK is not set.")
-                    return
-                r = requests.post(LOGS_WEBHOOK_URL, json={"embeds": [embed_dict]}, timeout=15)
-                r.raise_for_status()
-            except Exception as e:
-                await message.channel.send(f"Failed to post to logs: `{e}`")
+            if not LOGS_WEBHOOK_URL:
+                await message.channel.send("DISCORD_LOGS_WEBHOOK is not set.")
                 return
+            r = requests.post(LOGS_WEBHOOK_URL, json={"embeds": [embed_dict]}, timeout=15)
+            r.raise_for_status()
             await message.channel.send("Boss stats posted!")
         except Exception as e:
-            try:
-                await message.channel.send(f"Error: `{e}`")
-            except Exception:
-                pass
+            await message.channel.send(f"Error: `{e}`")
         return
 
     elif content.lower() == "!previousboss":
@@ -841,21 +832,14 @@ async def on_message(message):
                 await message.channel.send("No previous boss raid found.")
                 return
             embed_dict = build_boss_embed(raid, lb, members)
-            try:
-                if not LOGS_WEBHOOK_URL:
-                    await message.channel.send("DISCORD_LOGS_WEBHOOK is not set.")
-                    return
-                r = requests.post(LOGS_WEBHOOK_URL, json={"embeds": [embed_dict]}, timeout=15)
-                r.raise_for_status()
-            except Exception as e:
-                await message.channel.send(f"Failed to post to logs: `{e}`")
+            if not LOGS_WEBHOOK_URL:
+                await message.channel.send("DISCORD_LOGS_WEBHOOK is not set.")
                 return
+            r = requests.post(LOGS_WEBHOOK_URL, json={"embeds": [embed_dict]}, timeout=15)
+            r.raise_for_status()
             await message.channel.send("Previous boss stats posted!")
         except Exception as e:
-            try:
-                await message.channel.send(f"Error: `{e}`")
-            except Exception:
-                pass
+            await message.channel.send(f"Error: `{e}`")
         return
 
 @bot.event
@@ -875,18 +859,15 @@ async def on_member_update(before, after):
     if MEMBERS_ROLE_ID in before_roles and MEMBERS_ROLE_ID not in after_roles:
         user_id = str(after.id)
         members_data = load_members()
-        if user_id in members_data:
-            charname = members_data[user_id]
-            if isinstance(charname, dict):
-                charname = charname.get("ingame_name", user_id)
+        matched_key = next((k for k, v in members_data.items() if v == user_id), None)
+        if matched_key:
             await asyncio.get_running_loop().run_in_executor(None, do_self_unlink, user_id)
-            await send_log(f"Auto-unlinked (role removed): <@{user_id}> -> **{charname}**")
+            await send_log(f"Auto-unlinked (role removed): <@{user_id}> -> **{matched_key}**")
 
 @bot.event
 async def on_ready():
     print(f"[BOT] Logged in as {bot.user} — online")
     if not weekly_giveaway.is_running():
         weekly_giveaway.start()
-
 
 bot.run(BOT_TOKEN)
