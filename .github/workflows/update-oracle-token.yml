@@ -1,0 +1,25 @@
+name: Update Oracle Token
+
+on:
+  workflow_dispatch:
+    inputs:
+      token:
+        description: New DEGEN_REFRESH_TOKEN value
+        required: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update .env on Oracle and restart bot
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
+          script: |
+            sed -i "s|DEGEN_REFRESH_TOKEN=.*|DEGEN_REFRESH_TOKEN=${{ github.event.inputs.token }}|" /home/ubuntu/donations-bot/.env
+            echo "[ORACLE] .env token updated, restarting bot..."
+            pm2 restart donations-bot
+            echo "[ORACLE] Done"
