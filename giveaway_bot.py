@@ -198,11 +198,11 @@ def find_eligible(donations, daily_limit, discord_map, role_ids, debug=False):
 
     return sorted(eligible, key=lambda x: x["count"], reverse=True), threshold, logs
 
-def post_webhook(embed, content=""):
+def post_webhook(embed, content="", mention_id=None):
     payload = {"username": "SleepingForest Giveaway", "embeds": [embed]}
     if content:
         payload["content"] = content
-        payload["allowed_mentions"] = {"parse": ["users"]}
+        payload["allowed_mentions"] = {"parse": [], "users": [mention_id]} if mention_id else {"parse": []}
     requests.post(WEBHOOK_URL, json=payload, timeout=15).raise_for_status()
 
 def run_giveaway_logic(debug=False):
@@ -250,7 +250,7 @@ def run_giveaway_logic(debug=False):
             "footer": {"text": footer_text},
             "timestamp": datetime.now(timezone.utc).isoformat()
         },
-        content=mention if winner_discord_id else ""
+        content=mention if winner_discord_id else "", mention_id=winner_discord_id
     )
     return f"posted: winner is {winner['name']}", logs
 
@@ -664,8 +664,7 @@ async def on_message(message):
     elif content == "!testgiveaway":
         try:
             result, logs = await asyncio.get_running_loop().run_in_executor(None, run_giveaway_logic)
-            log_text = "\n".join(logs[-20:]) if logs else "no logs"
-            await message.channel.send(f"**Result:** {result}\n```\n{log_text}\n```")
+            await message.channel.send(f"Test complete: {result}")
         except Exception as e:
             await message.channel.send(f"Error: {e}")
 
