@@ -25,8 +25,6 @@ GUILD_LEADER    = "Bloss"
 OWNER_ID        = "237324092569681921"
 MEMBERS_ROLE_ID = "1487294472478785536"
 ADMIN_ROLE_ID   = "1487296175756410961"
-ADMIN_ROLE_ID   = "1487296175756410961"
-ADMIN_ROLE_ID   = "1487296175756410961"
 OFFICER_ROLE_ID = "1487294633150251089"
 
 DONATIONS_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
@@ -159,10 +157,15 @@ def get_role_member_ids():
     print(f"[ROLE] {len(role_ids)} members have the donations role")
     return role_ids
 
-def find_eligible(donations, daily_limit, discord_map, role_ids):
+def find_eligible(donations, daily_limit, discord_map, role_ids, debug=False):
+    logs = []
+    def log(msg):
+        print(msg)
+        logs.append(msg)
+
     if role_ids is None:
-        print("[CRITICAL] Role list failed to load — aborting")
-        return [], 0
+        log("[CRITICAL] Role list failed to load — aborting")
+        return [], 0, logs
 
     leader_count = None
     for player in donations:
@@ -170,26 +173,30 @@ def find_eligible(donations, daily_limit, discord_map, role_ids):
             leader_count = player.get("count", 0)
             break
     threshold = leader_count if leader_count is not None else daily_limit * 7
-    print(f"[GIVEAWAY] Threshold ({GUILD_LEADER}): {threshold}")
+    log(f"[GIVEAWAY] Threshold ({GUILD_LEADER}): {threshold}")
 
     eligible = []
     for player in donations:
         name = get_player_name(player)
         count = player.get("count", 0)
-        if count < threshold:
-            print(f"[GIVEAWAY] {name}: {count} — below threshold, excluded")
+
+        # Bloss always qualifies as long as they are linked and have the role
+        is_leader = (name == GUILD_LEADER)
+
+        if not is_leader and count < threshold:
+            log(f"[GIVEAWAY] {name}: {count} — below threshold, excluded")
             continue
         discord_id = discord_map.get(name, "")
         if not discord_id:
-            print(f"[GIVEAWAY] {name}: not in members.json, excluded")
+            log(f"[GIVEAWAY] {name}: not in members.json, excluded")
             continue
         if discord_id not in role_ids:
-            print(f"[GIVEAWAY] {name}: missing donations role, excluded")
+            log(f"[GIVEAWAY] {name}: missing donations role, excluded")
             continue
-        print(f"[GIVEAWAY] {name}: {count} — eligible")
+        log(f"[GIVEAWAY] {name}: {count} — eligible")
         eligible.append({"name": name, "count": count})
 
-    return sorted(eligible, key=lambda x: x["count"], reverse=True), threshold
+    return sorted(eligible, key=lambda x: x["count"], reverse=True), threshold, logs
 
 def post_webhook(embed, content=""):
     payload = {"username": "SleepingForest Giveaway", "embeds": [embed]}
@@ -198,21 +205,22 @@ def post_webhook(embed, content=""):
         payload["allowed_mentions"] = {"parse": ["users"]}
     requests.post(WEBHOOK_URL, json=payload, timeout=15).raise_for_status()
 
-def run_giveaway_logic():
+def run_giveaway_logic(debug=False):
     discord_map = load_members()
     token = get_access_token()
     headers = make_headers(token)
     daily_limit = get_daily_limit(headers)
     donations = get_weekly_donations(headers)
     role_ids = get_role_member_ids()
-    eligible, threshold = find_eligible(donations, daily_limit, discord_map, role_ids)
+    eligible, threshold, logs = find_eligible(donations, daily_limit, discord_map, role_ids, debug=debug)
 
     if threshold == 0:
-        return "aborted: role check failed"
+        return "aborted: role check failed", logs
 
     week_ending = get_week_ending()
     footer_text = f"Week ending {week_ending} • Daily limit: {daily_limit}"
     print(f"[GIVEAWAY] Final eligible ({len(eligible)}): {[p['name'] for p in eligible]}")
+    logs.append(f"[GIVEAWAY] Final eligible ({len(eligible)}): {[p['name'] for p in eligible]}")
 
     if not eligible:
         post_webhook({
@@ -222,7 +230,7 @@ def run_giveaway_logic():
             "footer": {"text": footer_text},
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
-        return "posted: no eligible players"
+        return "posted: no eligible players", logs
 
     winner = random.choice(eligible)
     count = len(eligible)
@@ -244,7 +252,7 @@ def run_giveaway_logic():
         },
         content=mention if winner_discord_id else ""
     )
-    return f"posted: winner is {winner['name']}"
+    return f"posted: winner is {winner['name']}", logs
 
 def trigger_activity_check():
     if not GH_PAT:
@@ -274,7 +282,6 @@ def push_members_to_github():
             "Authorization": f"Bearer {GH_PAT}",
             "Accept": "application/vnd.github+json"
         }
-        # Get current SHA of the file
         r = requests.get(
             "https://api.github.com/repos/darkblisss/donations-bot/contents/members.json",
             headers=headers, timeout=10
@@ -340,7 +347,7 @@ def do_members_list():
     members = load_members()
     if not members:
         return "members.json is empty."
-    lines = [f"**{name}** → <@{did}>" for name, did in sorted(members.items())]
+    lines = [f"**{name}** → <@{did}>\" for name, did in sorted(members.items())"]
     return f"**Linked members ({len(lines)}):**\n" + "\n".join(lines)
 
 @tasks.loop(time=GIVEAWAY_TIME)
@@ -530,10 +537,8 @@ async def on_message(message):
     author_id = str(message.author.id)
     is_owner = author_id == OWNER_ID
 
-    # !link — works in server and DMs, supports !link @mention CharName for admin/owner
     if content.lower().startswith("!link "):
         args = content[6:].strip()
-        # Admin/owner: !link CharName DiscordID (plain numeric ID)
         _lparts = args.rsplit(None, 1)
         if (len(_lparts) == 2 and _lparts[1].isdigit()
                 and len(_lparts[1]) >= 15 and (is_owner or is_admin)):
@@ -598,7 +603,6 @@ async def on_message(message):
                 pass
         return
 
-    # !unlink — self unlink or admin force unlink by in-game name
     if content.lower() == "!unlink" or content.lower().startswith("!unlink "):
         is_dm = message.guild is None
         guild_obj = bot.get_guild(int(DISCORD_GUILD_ID)) if DISCORD_GUILD_ID else None
@@ -644,7 +648,6 @@ async def on_message(message):
                     pass
         return
 
-    # Owner or admin commands
     if not is_owner and not (message.guild and has_admin_role(message.guild.get_member(message.author.id) or message.author)):
         return
 
@@ -660,8 +663,9 @@ async def on_message(message):
 
     elif content == "!testgiveaway":
         try:
-            result = await asyncio.get_running_loop().run_in_executor(None, run_giveaway_logic)
-            await message.channel.send(f"Result: {result}")
+            result, logs = await asyncio.get_running_loop().run_in_executor(None, run_giveaway_logic)
+            log_text = "\n".join(logs[-20:]) if logs else "no logs"
+            await message.channel.send(f"**Result:** {result}\n```\n{log_text}\n```")
         except Exception as e:
             await message.channel.send(f"Error: {e}")
 
@@ -717,41 +721,6 @@ async def on_message(message):
                     lines.append(f"GITHUB {repo.split('/')[1]}: FAILED after 3 attempts")
         else:
             lines.append("GITHUB: GH_PAT not set — secrets not updated")
-        render_api_key = os.environ.get("RENDER_API_KEY", "").strip()
-        svc_id = os.environ.get("RENDER_SERVICE_ID_DONATIONS", "").strip()
-        if render_api_key and svc_id:
-            try:
-                r = requests.get(
-                    f"https://api.render.com/v1/services/{svc_id}/env-vars",
-                    headers={"Authorization": f"Bearer {render_api_key}", "Accept": "application/json"},
-                    timeout=15
-                )
-                existing = r.json() if r.status_code == 200 else []
-                updated_vars = []
-                found = False
-                for item in existing:
-                    ev = item.get("envVar", item)
-                    k = ev.get("key", "")
-                    v = new_token if k == "DEGEN_REFRESH_TOKEN" else ev.get("value", "")
-                    if k == "DEGEN_REFRESH_TOKEN":
-                        found = True
-                    updated_vars.append({"key": k, "value": v})
-                if not found:
-                    updated_vars.append({"key": "DEGEN_REFRESH_TOKEN", "value": new_token})
-                put_r = requests.put(
-                    f"https://api.render.com/v1/services/{svc_id}/env-vars",
-                    headers={"Authorization": f"Bearer {render_api_key}", "Accept": "application/json", "Content-Type": "application/json"},
-                    json=updated_vars,
-                    timeout=15
-                )
-                if put_r.status_code in (200, 201):
-                    lines.append("RENDER: env var updated")
-                else:
-                    lines.append(f"RENDER: update failed HTTP {put_r.status_code}")
-            except Exception as e:
-                lines.append(f"RENDER: error - {e}")
-        else:
-            lines.append("RENDER: API key or service ID not set — skipped")
         msg = "\n".join(lines)
         try:
             await message.author.send(msg)
@@ -766,7 +735,6 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(f"Error: {e}")
 
-
     elif content.lower() == "!botcommands":
         guild_obj4 = bot.get_guild(int(DISCORD_GUILD_ID)) if DISCORD_GUILD_ID else None
         acting4 = guild_obj4.get_member(int(author_id)) if guild_obj4 else None
@@ -778,7 +746,6 @@ async def on_message(message):
             description="Commands available for your current roles.",
             color=0x958AEA
         )
-
         embed.add_field(
             name="🌸 Members",
             value=(
@@ -789,7 +756,6 @@ async def on_message(message):
             ),
             inline=False
         )
-
         if _is_officer or _is_admin or is_owner:
             embed.add_field(
                 name="🌿 Officers",
@@ -801,7 +767,6 @@ async def on_message(message):
                 ),
                 inline=False
             )
-
         if _is_admin or is_owner:
             embed.add_field(
                 name="✨ Admins",
@@ -819,19 +784,17 @@ async def on_message(message):
                 ),
                 inline=False
             )
-
         if is_owner:
             embed.add_field(
                 name="👑 Owner",
                 value=(
-                    "`!giveaway`\n"
-                    "Manually trigger the weekly giveaway\n\n"
+                    "`!testgiveaway`\n"
+                    "Test the giveaway and see full debug logs\n\n"
                     "`!settoken`\n"
                     "Update the DegenIdle API token"
                 ),
                 inline=False
             )
-
         embed.set_footer(text="Role-aware command list")
         await message.channel.send(embed=embed)
         return
