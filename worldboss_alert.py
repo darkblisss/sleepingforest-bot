@@ -17,6 +17,8 @@ GH_PAT = os.environ.get("GH_PAT", "").strip()
 GH_REPO = "darkblisss/worldboss-bot"
 RENDER_API_KEY = os.environ.get("RENDER_API_KEY", "").strip()
 RENDER_SERVICE_ID = os.environ.get("RENDER_SERVICE_ID", "").strip()
+ORACLE_HOST = os.environ.get("ORACLE_HOST", "").strip()
+ORACLE_USER = os.environ.get("ORACLE_USER", "ubuntu").strip()
 
 SEND_AT_MINUTES_BEFORE_SPAWN = 5
 LOOKAHEAD_MINUTES = 10
@@ -32,6 +34,26 @@ def send_error_alert(message):
         except Exception:
             pass
 
+def update_oracle_env(new_refresh_token):
+    if not GH_PAT or not new_refresh_token:
+        return
+    try:
+        r = requests.post(
+            "https://api.github.com/repos/darkblisss/donations-bot/actions/workflows/update-oracle-token.yml/dispatches",
+            headers={
+                "Authorization": f"Bearer {GH_PAT}",
+                "Accept": "application/vnd.github+json"
+            },
+            json={"ref": "main", "inputs": {"token": new_refresh_token}},
+            timeout=15
+        )
+        if r.status_code == 204:
+            print("[ORACLE] Triggered Oracle .env update workflow")
+        else:
+            print(f"[ORACLE] Trigger failed: {r.status_code} {r.text}")
+            send_error_alert(f"⚠️ Oracle token update workflow failed: {r.status_code}")
+    except Exception as e:
+        send_error_alert(f"⚠️ Oracle token update trigger error: {e}")
 
 def update_render_secret(new_refresh_token, token_changed=True):
     if not RENDER_API_KEY or not RENDER_SERVICE_ID or not new_refresh_token:
@@ -101,9 +123,7 @@ def refresh_access_token():
     refresh_token = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
     if not refresh_token:
         raise RuntimeError("Missing DEGEN_REFRESH_TOKEN")
-
     print(f"[TOKEN] Using refresh token ending in: ...{refresh_token[-4:]}")
-
     try:
         r = requests.post(
             "https://auth.degenidle.com/oauth2/token",
@@ -129,6 +149,7 @@ def refresh_access_token():
         print(f"[TOKEN] Token changed: {'NO — SAME TOKEN, rotation may be broken!' if same else 'YES — token rotated successfully'}")
         update_github_secret(new_refresh)
         update_render_secret(new_refresh, token_changed=not same)
+        update_oracle_env(new_refresh)
     else:
         send_error_alert("⛔ DEGEN did not return a new refresh_token — rotation will break within 24h")
     return data["access_token"]
@@ -163,9 +184,7 @@ def spawn_unix(event):
 def build_embed(event):
     boss = event["boss"]
     unix_ts = spawn_unix(event)
-    scheduled_iso = normalize_dt(event["scheduled_time"]).astimezone(
-        timezone.utc
-    ).isoformat()
+    scheduled_iso = normalize_dt(event["scheduled_time"]).astimezone(timezone.utc).isoformat()
     return {
         "title": "Bossing Alert",
         "description": (
