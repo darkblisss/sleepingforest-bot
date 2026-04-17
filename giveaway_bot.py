@@ -63,20 +63,14 @@ def has_admin_role(member):
         return False
     return any(str(r.id) == ADMIN_ROLE_ID for r in member.roles)
 
-def has_admin_role(member):
-    if member is None or not hasattr(member, "roles"):
-        return False
-    return any(str(r.id) == ADMIN_ROLE_ID for r in member.roles)
-
-def has_admin_role(member):
-    return any(str(r.id) == ADMIN_ROLE_ID for r in member.roles)
-
 def has_officer_role(member):
     if member is None or not hasattr(member, "roles"):
         return False
     return any(str(r.id) in (OFFICER_ROLE_ID, ADMIN_ROLE_ID) for r in member.roles)
 
 def has_members_role(member):
+    if member is None or not hasattr(member, "roles"):
+        return False
     return any(str(r.id) == MEMBERS_ROLE_ID for r in member.roles)
 
 def get_access_token():
