@@ -17,9 +17,10 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
           script: |
             sed -i "s|DEGEN_REFRESH_TOKEN=.*|DEGEN_REFRESH_TOKEN=${{ github.event.inputs.token }}|" /home/ubuntu/donations-bot/.env
             echo "[ORACLE] .env token updated, restarting bot..."
-            pm2 restart donations-bot
+            pm2 delete donations-bot || true
+            pm2 start /home/ubuntu/donations-bot/start.sh --name donations-bot
+            pm2 save
             echo "[ORACLE] Done"
