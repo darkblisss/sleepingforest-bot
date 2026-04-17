@@ -20,6 +20,8 @@ jobs:
           script: |
             set -e
             cd ~/donations-bot
+            cp members.json /tmp/members_backup.json || true
             git fetch origin main
-            git reset --keep origin/main
+            git reset --hard origin/main
+            cp /tmp/members_backup.json members.json || true
             pm2 restart donations-bot
