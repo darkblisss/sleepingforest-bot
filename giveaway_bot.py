@@ -101,7 +101,58 @@ def get_access_token():
         timeout=20
     )
     r.raise_for_status()
-    return r.json()["access_token"]
+    data = r.json()
+    new_refresh = data.get("refresh_token")
+    if new_refresh and new_refresh != refresh_token:
+        os.environ["DEGEN_REFRESH_TOKEN"] = new_refresh
+        print(f"[TOKEN] Rotated — saving new token ending ...{new_refresh[-4:]}")
+        _save_token_to_render(new_refresh)
+        _save_token_to_github(new_refresh)
+    return data["access_token"]
+
+def _save_token_to_render(new_token):
+    render_api_key = os.environ.get("RENDER_API_KEY", "").strip()
+    render_service_id = os.environ.get("RENDER_SERVICE_ID", "").strip()
+    if not render_api_key or not render_service_id:
+        return
+    headers = {"Authorization": f"Bearer {render_api_key}", "Accept": "application/json", "Content-Type": "application/json"}
+    try:
+        r = requests.get(f"https://api.render.com/v1/services/{render_service_id}/env-vars", headers=headers, timeout=10)
+        r.raise_for_status()
+        updated = []
+        found = False
+        for item in r.json():
+            ev = item.get("envVar", {})
+            if ev.get("key") == "DEGEN_REFRESH_TOKEN":
+                updated.append({"key": "DEGEN_REFRESH_TOKEN", "value": new_token})
+                found = True
+            else:
+                updated.append({"key": ev["key"], "value": ev.get("value", "")})
+        if not found:
+            updated.append({"key": "DEGEN_REFRESH_TOKEN", "value": new_token})
+        requests.put(f"https://api.render.com/v1/services/{render_service_id}/env-vars", headers=headers, json=updated, timeout=10).raise_for_status()
+        print("[TOKEN] Render env var updated")
+    except Exception as e:
+        print(f"[TOKEN] Render update failed: {e}")
+
+def _save_token_to_github(new_token):
+    gh_pat = os.environ.get("GH_PAT", "").strip()
+    if not gh_pat:
+        return
+    import base64
+    from nacl import encoding, public as nacl_public
+    repos = ["darkblisss/worldboss-bot", "darkblisss/donations-bot", "darkblisss/guild-activity-checker"]
+    for repo in repos:
+        try:
+            r = requests.get(f"https://api.github.com/repos/{repo}/actions/secrets/public-key", headers={"Authorization": f"Bearer {gh_pat}"}, timeout=10)
+            r.raise_for_status()
+            key_data = r.json()
+            pub_key = nacl_public.PublicKey(key_data["key"].encode(), encoding.Base64Encoder)
+            encrypted = base64.b64encode(nacl_public.SealedBox(pub_key).encrypt(new_token.encode())).decode()
+            requests.put(f"https://api.github.com/repos/{repo}/actions/secrets/DEGEN_REFRESH_TOKEN", headers={"Authorization": f"Bearer {gh_pat}"}, json={"encrypted_value": encrypted, "key_id": key_data["key_id"]}, timeout=10)
+            print(f"[TOKEN] GitHub secret updated: {repo}")
+        except Exception as e:
+            print(f"[TOKEN] GitHub update failed for {repo}: {e}")
 
 def make_headers(access_token):
     return {
