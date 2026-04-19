@@ -115,6 +115,7 @@ def _post_token_log(new_token, expires_in=86400):
     import time as _time
     expires_unix = int(_time.time()) + expires_in
     os.environ["TOKEN_EXPIRES_UNIX"] = str(expires_unix)
+    _save_expiry_to_render(expires_unix)
     log_webhook = os.environ.get("DISCORD_LOGS_WEBHOOK", "").strip()
     if not log_webhook:
         return
@@ -131,6 +132,31 @@ def _post_token_log(new_token, expires_in=86400):
             "footer": {"text": "SleepingForest • Token Rotation"}
         }]
     }, timeout=10)
+
+def _save_expiry_to_render(expires_unix):
+    render_api_key = os.environ.get("RENDER_API_KEY", "").strip()
+    render_service_id = os.environ.get("RENDER_SERVICE_ID", "").strip()
+    if not render_api_key or not render_service_id:
+        return
+    headers = {"Authorization": f"Bearer {render_api_key}", "Accept": "application/json", "Content-Type": "application/json"}
+    try:
+        r = requests.get(f"https://api.render.com/v1/services/{render_service_id}/env-vars", headers=headers, timeout=10)
+        r.raise_for_status()
+        updated = []
+        found = False
+        for item in r.json():
+            ev = item.get("envVar", {})
+            if ev.get("key") == "TOKEN_EXPIRES_UNIX":
+                updated.append({"key": "TOKEN_EXPIRES_UNIX", "value": str(expires_unix)})
+                found = True
+            else:
+                updated.append({"key": ev["key"], "value": ev.get("value", "")})
+        if not found:
+            updated.append({"key": "TOKEN_EXPIRES_UNIX", "value": str(expires_unix)})
+        requests.put(f"https://api.render.com/v1/services/{render_service_id}/env-vars", headers=headers, json=updated, timeout=10).raise_for_status()
+        print("[TOKEN] Expiry timestamp saved to Render")
+    except Exception as e:
+        print(f"[TOKEN] Failed to save expiry to Render: {e}")
 
 def _save_token_to_render(new_token):
     render_api_key = os.environ.get("RENDER_API_KEY", "").strip()
@@ -956,6 +982,9 @@ async def on_member_update(before, after):
 @bot.event
 async def on_ready():
     print(f"[BOT] Logged in as {bot.user} — online")
+    expiry = os.environ.get("TOKEN_EXPIRES_UNIX", "")
+    if expiry:
+        print(f"[TOKEN] Loaded expiry from env: {expiry}")
     if not weekly_giveaway.is_running():
         weekly_giveaway.start()
 
