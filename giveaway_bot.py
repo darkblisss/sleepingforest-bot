@@ -112,11 +112,12 @@ def get_access_token():
     return data["access_token"]
 
 def _post_token_log(new_token, expires_in=86400):
+    import time as _time
+    expires_unix = int(_time.time()) + expires_in
+    os.environ["TOKEN_EXPIRES_UNIX"] = str(expires_unix)
     log_webhook = os.environ.get("DISCORD_LOGS_WEBHOOK", "").strip()
     if not log_webhook:
         return
-    import time as _time
-    expires_unix = int(_time.time()) + expires_in
     requests.post(log_webhook, json={
         "username": "SleepingForest Log",
         "embeds": [{
@@ -796,6 +797,22 @@ async def on_message(message):
             await message.author.send(msg)
         except Exception:
             await message.channel.send(f"{message.author.mention}\n{msg}")
+        return
+
+    elif content.lower() == "!tokenexpiry":
+        guild_obj5 = bot.get_guild(int(DISCORD_GUILD_ID)) if DISCORD_GUILD_ID else None
+        acting5 = guild_obj5.get_member(int(author_id)) if guild_obj5 else None
+        if not is_owner and not has_admin_role(acting5):
+            await message.channel.send("You need the Admin role to use this command.")
+            return
+        expires_unix = os.environ.get("TOKEN_EXPIRES_UNIX", "")
+        if not expires_unix:
+            await message.channel.send("No token expiry on record yet. The token will be tracked after the next rotation.")
+            return
+        await message.channel.send(
+            f"**DegenIdle Token Expiry**\n"
+            f"Expires: <t:{expires_unix}:R> (<t:{expires_unix}:f>)"
+        )
         return
 
     elif content == "!activitycheck":
