@@ -54,6 +54,13 @@ def update_render_secret(new_refresh_token, token_changed=True):
         put_r = requests.put(f"https://api.render.com/v1/services/{RENDER_SERVICE_ID}/env-vars", headers=headers, json=updated, timeout=10)
         put_r.raise_for_status()
         print("✅ Render env var synced")
+        donations_url = os.environ.get("DONATIONS_BOT_URL", "").strip()
+        if donations_url:
+            try:
+                requests.post(f"{donations_url}/token-updated", timeout=10)
+                print("✅ Donations bot notified of token update")
+            except Exception as notify_err:
+                print(f"⚠️ Failed to notify donations bot: {notify_err}")
     except Exception as e:
         send_error_alert(f"⚠️ Failed to sync DEGEN_REFRESH_TOKEN to Render: {e}")
 
