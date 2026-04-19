@@ -108,15 +108,15 @@ def get_access_token():
         print(f"[TOKEN] Rotated — saving new token ending ...{new_refresh[-4:]}")
         _save_token_to_render(new_refresh)
         _save_token_to_github(new_refresh)
-        _post_token_log(new_refresh)
+        _post_token_log(new_refresh, expires_in=data.get("expires_in", 86400))
     return data["access_token"]
 
-def _post_token_log(new_token):
+def _post_token_log(new_token, expires_in=86400):
     log_webhook = os.environ.get("DISCORD_LOGS_WEBHOOK", "").strip()
     if not log_webhook:
         return
     import time as _time
-    expires_unix = int(_time.time()) + 86400
+    expires_unix = int(_time.time()) + expires_in
     requests.post(log_webhook, json={
         "username": "SleepingForest Log",
         "embeds": [{
