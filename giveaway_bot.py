@@ -49,6 +49,15 @@ flask_app = Flask(__name__)
 def health():
     return "OK", 200
 
+@flask_app.route("/token-updated", methods=["POST"])
+def token_updated():
+    import time as _time
+    new_token = os.environ.get("DEGEN_REFRESH_TOKEN", "")
+    expires_in = int(os.environ.get("TOKEN_EXPIRES_UNIX", str(int(_time.time()) + 86400))) - int(_time.time())
+    if new_token:
+        _post_token_log(new_token, expires_in=max(expires_in, 86400))
+    return "OK", 200
+
 def run_flask():
     port = int(os.environ.get("PORT", "10000"))
     flask_app.run(host="0.0.0.0", port=port)
