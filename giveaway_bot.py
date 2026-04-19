@@ -108,7 +108,28 @@ def get_access_token():
         print(f"[TOKEN] Rotated — saving new token ending ...{new_refresh[-4:]}")
         _save_token_to_render(new_refresh)
         _save_token_to_github(new_refresh)
+        _post_token_log(new_refresh)
     return data["access_token"]
+
+def _post_token_log(new_token):
+    log_webhook = os.environ.get("DISCORD_LOGS_WEBHOOK", "").strip()
+    if not log_webhook:
+        return
+    import time as _time
+    expires_unix = int(_time.time()) + 86400
+    requests.post(log_webhook, json={
+        "username": "SleepingForest Log",
+        "embeds": [{
+            "title": "🔑 Token Refreshed",
+            "description": (
+                f"The DegenIdle refresh token has been rotated successfully.\n"
+                f"**New token ending:** `...{new_token[-4:]}`\n\n"
+                f"Expires approximately: <t:{expires_unix}:R> (<t:{expires_unix}:f>)"
+            ),
+            "color": 0x01696f,
+            "footer": {"text": "SleepingForest • Token Rotation"}
+        }]
+    }, timeout=10)
 
 def _save_token_to_render(new_token):
     render_api_key = os.environ.get("RENDER_API_KEY", "").strip()
