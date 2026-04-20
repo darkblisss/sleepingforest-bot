@@ -784,6 +784,20 @@ async def on_message(message):
                 await message.channel.send(f"{message.author.mention} Invalid token.")
             return
         os.environ["DEGEN_REFRESH_TOKEN"] = new_token
+        try:
+            r_tok = requests.post(
+                "https://auth.degenidle.com/oauth2/token",
+                data={"client_id": CLIENT_ID, "grant_type": "refresh_token", "refresh_token": new_token},
+                timeout=15,
+            )
+            r_tok.raise_for_status()
+            tok_data = r_tok.json()
+            rotated = tok_data.get("refresh_token", new_token)
+            if rotated != new_token:
+                os.environ["DEGEN_REFRESH_TOKEN"] = rotated
+            _post_token_log(rotated, expires_in=tok_data.get("expires_in", 86400))
+        except Exception as _verify_err:
+            print(f"[SETTOKEN] Verify/log failed: {_verify_err}")
         lines = ["Token update results:", "IN-MEMORY: updated immediately (active now)"]
         import base64
         from nacl import encoding, public as nacl_public
