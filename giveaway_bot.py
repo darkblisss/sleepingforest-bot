@@ -6,7 +6,7 @@ import asyncio
 import requests
 import threading
 import discord
-from flask import Flask
+from flask import Flask, request
 from discord.ext import tasks
 from datetime import datetime, timezone, time, timedelta
 
@@ -52,9 +52,12 @@ def health():
 @flask_app.route("/token-updated", methods=["POST"])
 def token_updated():
     import time as _time
-    new_token = os.environ.get("DEGEN_REFRESH_TOKEN", "")
-    expires_in = int(os.environ.get("TOKEN_EXPIRES_UNIX", str(int(_time.time()) + 86400))) - int(_time.time())
+    data = request.get_json(silent=True) or {}
+    new_token = data.get("token") or os.environ.get("DEGEN_REFRESH_TOKEN", "")
     if new_token:
+        os.environ["DEGEN_REFRESH_TOKEN"] = new_token
+        print(f"[TOKEN] /token-updated called — token reloaded ending ...{new_token[-4:]}")
+        expires_in = int(os.environ.get("TOKEN_EXPIRES_UNIX", str(int(_time.time()) + 86400))) - int(_time.time())
         _post_token_log(new_token, expires_in=max(expires_in, 86400))
     return "OK", 200
 
