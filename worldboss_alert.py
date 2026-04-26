@@ -57,7 +57,7 @@ def update_render_secret(new_refresh_token, token_changed=True):
         donations_url = os.environ.get("DONATIONS_BOT_URL", "").strip()
         if donations_url:
             try:
-                requests.post(f"{donations_url}/token-updated", timeout=10)
+                requests.post(f"{donations_url}/token-updated", json={"token": new_token}, timeout=10)
                 print("✅ Donations bot notified of token update")
             except Exception as notify_err:
                 print(f"⚠️ Failed to notify donations bot: {notify_err}")
