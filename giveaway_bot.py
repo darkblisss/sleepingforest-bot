@@ -406,7 +406,9 @@ def push_members_to_github():
             "https://api.github.com/repos/darkblisss/donations-bot/contents/members.json",
             headers=headers, timeout=10
         )
+        print(f"[GitHub] GET members.json status: {r.status_code}")
         sha = r.json().get("sha", "") if r.status_code == 200 else ""
+        print(f"[GitHub] Current SHA: {sha or 'none'}")
         payload = {
             "message": "chore: auto-update members.json [skip ci]",
             "content": encoded
@@ -417,6 +419,7 @@ def push_members_to_github():
             "https://api.github.com/repos/darkblisss/donations-bot/contents/members.json",
             headers=headers, json=payload, timeout=10
         )
+        print(f"[GitHub] PUT status: {put_r.status_code} — {put_r.text[:200]}")
         if put_r.status_code in (200, 201):
             print("[GitHub] members.json pushed successfully")
         else:
