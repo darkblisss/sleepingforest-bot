@@ -1,0 +1,24 @@
+name: World Boss Alert
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests pynacl
+      - run: python worldboss_alert.py
+        env:
+          DEGEN_REFRESH_TOKEN: ${{ secrets.DEGEN_REFRESH_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          WORLD_BOSS_ROLE_ID: ${{ secrets.WORLD_BOSS_ROLE_ID }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          ERROR_WEBHOOK_URL: ${{ secrets.ERROR_WEBHOOK_URL }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          DONATIONS_BOT_URL: ${{ secrets.DONATIONS_BOT_URL }}
