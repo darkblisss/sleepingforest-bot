@@ -46,7 +46,8 @@ BOT_TOKEN             = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
 DISCORD_GUILD_ID      = os.environ.get("DISCORD_GUILD_ID", "").strip()
 DONATIONS_ROLE_ID     = os.environ.get("DONATIONS_ROLE_ID", "").strip()
 GIVEAWAY_WEBHOOK_URL  = os.environ.get("DISCORD_GIVEAWAY_WEBHOOK", "").strip()
-LOGS_WEBHOOK_URL      = os.environ.get("DONATIONS_WEBHOOK_URL", "").strip()
+DONATIONS_WEBHOOK_URL = os.environ.get("DONATIONS_WEBHOOK_URL", "").strip()  # public donations channel
+LOGS_WEBHOOK_URL      = os.environ.get("DISCORD_LOGS_WEBHOOK", "").strip()   # #logs channel
 WB_WEBHOOK_URL        = os.environ.get("DISCORD_WB_WEBHOOK", "").strip()
 ACTIVITY_WEBHOOK_URL  = os.environ.get("DISCORD_ACTIVITY_WEBHOOK", "").strip()
 ERROR_WEBHOOK_URL     = os.environ.get("ERROR_WEBHOOK_URL", "").strip()
@@ -55,7 +56,8 @@ RENDER_API_KEY        = os.environ.get("RENDER_API_KEY", "").strip()
 RENDER_SERVICE_ID     = os.environ.get("RENDER_SERVICE_ID", "").strip()
 WB_ROLE_ID            = os.environ.get("WORLD_BOSS_ROLE_ID", "").strip()
 
-DONATIONS_URL   = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
+DAILY_DONATIONS_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/daily?day=today&characterId={CHAR_ID}"
+WEEKLY_DONATIONS_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
 RESOURCES_URL   = f"{BASE}/guilds/{DEGEN_GUILD_ID}/resources?characterId={CHAR_ID}"
 GUILD_API       = f"{BASE}/guilds/character/{CHAR_ID}"
 PROFILE_API     = f"{BASE}/characters/profile/{{name}}"
@@ -171,21 +173,21 @@ def get_access_token():
         )
         r.raise_for_status()
     except Exception as e:
-        send_error_alert(f"⛔ TOKEN EXPIRED \u2014 run !settoken with a fresh token. Error: {e}")
+        send_error_alert(f"⛔ TOKEN EXPIRED — run !settoken with a fresh token. Error: {e}")
         raise
     data = r.json()
     new_refresh = data.get("refresh_token")
     if new_refresh:
         print(f"[TOKEN] New refresh token ending in: ...{new_refresh[-4:]}")
         changed = new_refresh != refresh_token
-        print(f"[TOKEN] Token changed: {'YES \u2014 rotated successfully' if changed else 'NO \u2014 same token'}")
+        print(f"[TOKEN] Token changed: {'YES — rotated successfully' if changed else 'NO — same token'}")
         if changed:
             os.environ["DEGEN_REFRESH_TOKEN"] = new_refresh
             _save_env_to_render("DEGEN_REFRESH_TOKEN", new_refresh)
             _save_token_to_github(new_refresh)
             _post_token_log(new_refresh, expires_in=data.get("expires_in", 86400))
     else:
-        send_error_alert("⛔ No new refresh_token returned \u2014 rotation will break within 24h")
+        send_error_alert("⛔ No new refresh_token returned — rotation will break within 24h")
     return data["access_token"]
 
 def make_headers(access_token):
@@ -277,7 +279,7 @@ def get_daily_limit(headers):
     return data.get("daily_limit", 20) if isinstance(data, dict) else 20
 
 def get_weekly_donations(headers):
-    r = requests.get(DONATIONS_URL, headers=headers, timeout=15)
+    r = requests.get(WEEKLY_DONATIONS_URL, headers=headers, timeout=15)
     r.raise_for_status()
     data = r.json()
     if isinstance(data, dict):
@@ -314,71 +316,78 @@ def get_role_member_ids():
         after = batch[-1]["user"]["id"]
     return {m["user"]["id"] for m in members if DONATIONS_ROLE_ID in m["roles"]}
 
-# ── Donations reminder (daily 18:00 UTC) ───────────────────────────────────────────────────
-def run_donations_reminder():
-    print(f"\n\u2500\u2500 Donations Reminder @ {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} \u2500\u2500")
-    if not LOGS_WEBHOOK_URL:
-        print("[Donations] No DONATIONS_WEBHOOK_URL set.")
+# ── Daily donations reminder ──────────────────────────────────────────────────────────────────
+def hours_until_reset():
+    now = datetime.now(timezone.utc)
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return round((midnight - now).total_seconds() / 3600)
+
+def run_donations_reminder(webhook_override=None):
+    print(f"\n── Donations Reminder @ {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} ──")
+    target_wh = webhook_override or DONATIONS_WEBHOOK_URL
+    if not target_wh:
+        print("[Donations] No webhook URL set.")
         return
     try:
         token = get_access_token()
-        headers = make_headers(token)
-        guild_names = get_guild_member_names(headers)
-        donations = get_weekly_donations(headers)
+        hdrs = make_headers(token)
         discord_map = load_members()
-        role_ids = get_role_member_ids() or set()
+        r = requests.get(DAILY_DONATIONS_URL, headers=hdrs, timeout=20)
+        r.raise_for_status()
+        data = r.json()
     except Exception as e:
         send_error_alert(f"Donations reminder failed: {e}")
         return
 
-    donated_this_week = {get_player_name(p) for p in donations if p.get("count", 0) > 0}
-    not_donated = [name for name in guild_names if name not in donated_this_week]
-
-    if not not_donated:
-        print("[Donations] Everyone has donated this week \u2014 no reminder needed.")
-        requests.post(LOGS_WEBHOOK_URL, json={
-            "username": "SleepingForest Guild",
-            "embeds": [{
-                "title": "\u2705 Daily Donations Check",
-                "description": "Everyone has donated this week. Nice work!",
-                "color": 0x27AE60,
-                "footer": {"text": "SleepingForest \u2022 18:00 UTC"},
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }]
-        }, timeout=15)
+    if not data.get("success"):
+        print("[Donations] API returned success=false")
         return
 
-    mention_ids = []
-    mention_lines = []
-    plain_lines = []
-    for name in sorted(not_donated):
-        discord_id = discord_map.get(name, "")
-        if discord_id and discord_id in role_ids:
-            mention_ids.append(discord_id)
-            mention_lines.append(f"<@{discord_id}>")
-        else:
-            plain_lines.append(f"**{name}**")
+    members = data.get("byMember", [])
+    cap = data.get("cap", MAX_DONATIONS_PER_DAY)
+    used = data.get("used", 0)
+    not_donated = [m for m in members if m.get("count", 0) < cap]
 
-    all_lines = mention_lines + plain_lines
-    top_mentions = " ".join(f"<@{did}>" for did in mention_ids) if mention_ids else ""
-    description = "The following guild members haven't donated this week yet:\n\n" + "\n".join(all_lines)
+    if not not_donated:
+        print("[Donations] Everyone has hit the cap today.")
+        return
+
+    percent = round((used / cap) * 100) if cap > 0 else 0
+    hours = hours_until_reset()
+    count = len(not_donated)
+    member_word = "member" if count == 1 else "members"
+
+    lines = [
+        f"Total donations today: {used}/{cap} ({percent}%)",
+        f"{count} {member_word} not fully donated:",
+        "",
+    ]
+    for m in not_donated:
+        lines.append(f"\u2022 {m['character_name']}")
+    lines.append("")
+    lines.append(f"About {hours} hours until reset, please get your donations in.")
+    lines.append("**Need resources? Reach out for help!**")
+
+    mentions = []
+    for m in not_donated:
+        discord_id = discord_map.get(m["character_name"], "")
+        if discord_id:
+            mentions.append(f"<@{discord_id}>")
 
     payload = {
-        "username": "SleepingForest Guild",
+        "username": "SleepingForest Watch",
+        "content": " ".join(mentions) if mentions else "",
         "embeds": [{
-            "title": "\ud83d\udce6 Daily Donations Reminder",
-            "description": description,
-            "color": 0xE67E22,
-            "footer": {"text": f"SleepingForest \u2022 Daily reminder \u2014 {len(not_donated)} member(s) outstanding"},
+            "title": "Daily Donation Reminder",
+            "description": "\n".join(lines),
+            "color": 0x958AEA,
+            "footer": {"text": "SleepingForest \u2022 DegenIdle"},
             "timestamp": datetime.now(timezone.utc).isoformat()
-        }]
+        }],
+        "allowed_mentions": {"parse": ["users"]}
     }
-    if top_mentions:
-        payload["content"] = top_mentions
-        payload["allowed_mentions"] = {"parse": [], "users": mention_ids}
-
-    requests.post(LOGS_WEBHOOK_URL, json=payload, timeout=15)
-    print(f"[Donations] Reminder posted \u2014 {len(not_donated)} member(s) haven't donated.")
+    requests.post(target_wh, json=payload, timeout=15)
+    print(f"[Donations] Reminder posted — {count} member(s) haven't hit cap today.")
 
 @tasks.loop(time=DONATIONS_TIME)
 async def donations_loop():
@@ -393,7 +402,7 @@ def get_week_ending():
 
 def find_eligible(donations, daily_limit, discord_map, role_ids):
     if role_ids is None:
-        return [], 0, ["[CRITICAL] Role list failed \u2014 aborting"]
+        return [], 0, ["[CRITICAL] Role list failed — aborting"]
     logs = []
     leader_count = next((p.get("count", 0) for p in donations if get_player_name(p) == GUILD_LEADER), None)
     threshold = leader_count if leader_count is not None else daily_limit * 7
@@ -403,7 +412,7 @@ def find_eligible(donations, daily_limit, discord_map, role_ids):
         name = get_player_name(player)
         count = player.get("count", 0)
         if name != GUILD_LEADER and count < threshold:
-            logs.append(f"[GIVEAWAY] {name}: {count} \u2014 below threshold")
+            logs.append(f"[GIVEAWAY] {name}: {count} — below threshold")
             continue
         discord_id = discord_map.get(name, "")
         if not discord_id:
@@ -412,7 +421,7 @@ def find_eligible(donations, daily_limit, discord_map, role_ids):
         if discord_id not in role_ids:
             logs.append(f"[GIVEAWAY] {name}: missing donations role")
             continue
-        logs.append(f"[GIVEAWAY] {name}: {count} \u2014 eligible")
+        logs.append(f"[GIVEAWAY] {name}: {count} — eligible")
         eligible.append({"name": name, "count": count})
     return sorted(eligible, key=lambda x: x["count"], reverse=True), threshold, logs
 
@@ -427,12 +436,11 @@ def run_giveaway_logic(test_mode=False):
     if threshold == 0:
         return "aborted: role check failed", logs
     week_ending = get_week_ending()
-    footer_text = f"Week ending {week_ending} \u2022 Daily limit: {daily_limit}"
+    footer_text = f"Week ending {week_ending} • Daily limit: {daily_limit}"
     target_webhook = LOGS_WEBHOOK_URL if test_mode else GIVEAWAY_WEBHOOK_URL
-    title_suffix = " [TEST]" if test_mode else ""
     if not eligible:
         requests.post(target_webhook, json={"username": "SleepingForest Giveaway", "embeds": [{
-                "title": f"Weekly Donations Giveaway{title_suffix}",
+                "title": "Weekly Donations Giveaway",
                 "description": "No winner this week.\nNobody hit the donation cap every day.\nBetter luck next week!",
                 "color": 0x958AEA,
                 "footer": {"text": footer_text},
@@ -444,7 +452,7 @@ def run_giveaway_logic(test_mode=False):
     winner_discord_id = discord_map.get(winner["name"], "")
     mention = f"<@{winner_discord_id}>" if winner_discord_id else winner["name"]
     payload = {"username": "SleepingForest Giveaway", "embeds": [{
-        "title": f"Weekly Donations Giveaway{title_suffix}",
+        "title": "Weekly Donations Giveaway",
         "description": (
             f"Congratulations {mention}, you won this week's giveaway!\n"
             f"{count} {'player' if count == 1 else 'players'} hit the donation cap this week.\nKeep it up!"
@@ -513,7 +521,7 @@ def do_members_list():
     members = load_members()
     if not members:
         return "members.json is empty."
-    lines = [f"**{name}** \u2192 <@{did}>" for name, did in sorted(members.items())]
+    lines = [f"**{name}** → <@{did}>" for name, did in sorted(members.items())]
     return f"**Linked members ({len(lines)}):**\n" + "\n".join(lines)
 
 # ── Boss stats ───────────────────────────────────────────────────────────────────────────────────────
@@ -570,21 +578,21 @@ def build_boss_embed(raid, lb, members=None):
         for i, e in enumerate(entries):
             dps = e["damage_dealt"] / secs if secs else 0
             rank = ["#1","#2","#3"][i] if i < 3 else f"#{i+1}"
-            lines.append(f"{rank} **{e['character_name']}**  \u00b7  {fmt(e['damage_dealt'])} DMG  \u00b7  {fmt(dps)}/s  \u00b7  {round(e['percentage'],1)}%")
+            lines.append(f"{rank} **{e['character_name']}**  ·  {fmt(e['damage_dealt'])} DMG  ·  {fmt(dps)}/s  ·  {round(e['percentage'],1)}%")
         part_val = "\n".join(lines)
 
     return {
-        "title": f"{boss['name']} Lv.{boss['level']} \u2500 Raid Report",
+        "title": f"{boss['name']} Lv.{boss['level']} ─ Raid Report",
         "description": f"{'\u2705' if defeated else '\u274c'} **{'BOSS DEFEATED' if defeated else 'Boss Survived'}**",
         "color": 0x2ECC71 if defeated else 0xB43232,
         "fields": [
-            {"name": "\ud83d\udcc5 Date", "value": date_str, "inline": True},
-            {"name": "\u23f1 Duration", "value": dur, "inline": True},
-            {"name": "\u2694\ufe0f Initiated by", "value": f"**{init_name}**", "inline": True},
+            {"name": "📅 Date", "value": date_str, "inline": True},
+            {"name": "⏱ Duration", "value": dur, "inline": True},
+            {"name": "⚔️ Initiated by", "value": f"**{init_name}**", "inline": True},
             {"name": "Boss HP", "value": hp_val, "inline": False},
             {"name": f"Participants ({len(entries)})", "value": part_val, "inline": False},
         ],
-        "footer": {"text": f"SleepingForest  \u00b7  {boss['name']} Lv.{boss['level']}"},
+        "footer": {"text": f"SleepingForest  ·  {boss['name']} Lv.{boss['level']}"},
     }
 
 # ── Activity checker ──────────────────────────────────────────────────────────────────────────────
@@ -651,7 +659,7 @@ def time_since(iso_str):
         return "unknown"
 
 def run_activity_check():
-    print(f"\n\u2500\u2500 Activity Check @ {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} \u2500\u2500")
+    print(f"\n── Activity Check @ {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} ──")
     access_token = get_access_token()
     headers = make_headers(access_token)
     snapshots = load_snapshots()
@@ -699,7 +707,7 @@ def run_activity_check():
     push_snapshots_to_github(new_snapshots)
 
     if is_first_run:
-        print("[Activity] First run \u2014 baselines saved.")
+        print("[Activity] First run — baselines saved.")
         return
 
     wh = ACTIVITY_WEBHOOK_URL or LOGS_WEBHOOK_URL
@@ -757,7 +765,7 @@ def wb_build_embed(event):
 
 def run_worldboss_check():
     if not WB_WEBHOOK_URL:
-        print("[WB] No DISCORD_WB_WEBHOOK set \u2014 skipping")
+        print("[WB] No DISCORD_WB_WEBHOOK set — skipping")
         return
     try:
         access_token = get_access_token()
@@ -845,7 +853,7 @@ async def on_message(message):
         if len(_lparts) == 2 and _lparts[1].isdigit() and len(_lparts[1]) >= 15 and (is_owner or is_admin):
             await asyncio.get_running_loop().run_in_executor(None, do_link, _lparts[1], _lparts[0].strip())
             await message.channel.send(f"Done! **{_lparts[0].strip()}** linked to <@{_lparts[1]}>.")
-            await send_log(f"Force-linked by ID: **{_lparts[0].strip()}** \u2192 <@{_lparts[1]}> (by <@{author_id}>)")
+            await send_log(f"Force-linked by ID: **{_lparts[0].strip()}** → <@{_lparts[1]}> (by <@{author_id}>)")
             return
         target_id = author_id
         ingame_name = args
@@ -873,7 +881,7 @@ async def on_message(message):
             try: await message.author.send(confirm)
             except Exception:
                 if not is_dm: await message.channel.send(f"<@{target_id}> {confirm}")
-            await send_log(f"Linked: <@{target_id}> \u2192 **{ingame_name}**")
+            await send_log(f"Linked: <@{target_id}> → **{ingame_name}**")
         except Exception as e:
             try: await message.author.send(f"Something went wrong: {e}")
             except Exception: pass
@@ -904,7 +912,7 @@ async def on_message(message):
                 try: await message.author.send(result)
                 except Exception:
                     if not is_dm: await message.channel.send(f"{message.author.mention} {result}")
-                await send_log(f"Unlinked: <@{author_id}> \u2192 **{charname}**")
+                await send_log(f"Unlinked: <@{author_id}> → **{charname}**")
             except Exception as e:
                 try: await message.author.send(f"Something went wrong: {e}")
                 except Exception: pass
@@ -934,8 +942,8 @@ async def on_message(message):
     elif content == "!testdonations":
         if not is_owner and not is_admin: return
         try:
-            await asyncio.get_running_loop().run_in_executor(None, run_donations_reminder)
-            await message.channel.send("Donations reminder test fired \u2014 check logs channel.")
+            await asyncio.get_running_loop().run_in_executor(None, run_donations_reminder, LOGS_WEBHOOK_URL)
+            await message.channel.send("Donations reminder test fired — check logs channel.")
         except Exception as e:
             await message.channel.send(f"Error: {e}")
 
@@ -943,7 +951,7 @@ async def on_message(message):
         if not is_owner and not is_admin: return
         try:
             await asyncio.get_running_loop().run_in_executor(None, run_activity_check)
-            await message.channel.send("Activity check complete \u2014 results posted.")
+            await message.channel.send("Activity check complete — results posted.")
         except Exception as e:
             await message.channel.send(f"Error: {e}")
 
@@ -951,7 +959,7 @@ async def on_message(message):
         if not is_owner and not is_admin: return
         new_token = content[10:].strip()
         if len(new_token) < 20:
-            try: await message.author.send("Invalid token \u2014 too short.")
+            try: await message.author.send("Invalid token — too short.")
             except Exception: await message.channel.send(f"{message.author.mention} Invalid token.")
             return
         os.environ["DEGEN_REFRESH_TOKEN"] = new_token
@@ -988,7 +996,7 @@ async def on_message(message):
                 await message.channel.send("No raid history found.")
                 return
             if not LOGS_WEBHOOK_URL:
-                await message.channel.send("DONATIONS_WEBHOOK_URL is not set.")
+                await message.channel.send("DISCORD_LOGS_WEBHOOK is not set.")
                 return
             requests.post(LOGS_WEBHOOK_URL, json={"embeds": [build_boss_embed(raid, lb, members)]}, timeout=15).raise_for_status()
             await message.channel.send("Boss stats posted!")
@@ -1005,7 +1013,7 @@ async def on_message(message):
                 await message.channel.send("No previous boss raid found.")
                 return
             if not LOGS_WEBHOOK_URL:
-                await message.channel.send("DONATIONS_WEBHOOK_URL is not set.")
+                await message.channel.send("DISCORD_LOGS_WEBHOOK is not set.")
                 return
             requests.post(LOGS_WEBHOOK_URL, json={"embeds": [build_boss_embed(raid, lb, members)]}, timeout=15).raise_for_status()
             await message.channel.send("Previous boss stats posted!")
@@ -1014,11 +1022,11 @@ async def on_message(message):
 
     elif content.lower() == "!botcommands":
         embed = discord.Embed(title="SleepingForest Bot Commands", description="Commands available for your current roles.", color=0x958AEA)
-        embed.add_field(name="\ud83c\udf38 Members", value="`!link YourIngameName`\nLink your Discord to your in-game character\n\n`!unlink`\nUnlink your own account", inline=False)
+        embed.add_field(name="🌸 Members", value="`!link YourIngameName`\nLink your Discord to your in-game character\n\n`!unlink`\nUnlink your own account", inline=False)
         if is_officer or is_admin or is_owner:
-            embed.add_field(name="\ud83c\udf3f Officers", value="`!bossstats`\nPost the latest boss raid report\n\n`!previousboss`\nPost the previous boss raid report", inline=False)
+            embed.add_field(name="🌿 Officers", value="`!bossstats`\nPost the latest boss raid report\n\n`!previousboss`\nPost the previous boss raid report", inline=False)
         if is_admin or is_owner:
-            embed.add_field(name="\u2728 Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck token expiry", inline=False)
+            embed.add_field(name="✨ Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck token expiry", inline=False)
         embed.set_footer(text="Role-aware command list")
         await message.channel.send(embed=embed)
 
@@ -1037,11 +1045,11 @@ async def on_member_update(before, after):
         matched_key = next((k for k, v in members_data.items() if v == user_id), None)
         if matched_key:
             await asyncio.get_running_loop().run_in_executor(None, do_self_unlink, user_id)
-            await send_log(f"Auto-unlinked (role removed): <@{user_id}> \u2192 **{matched_key}**")
+            await send_log(f"Auto-unlinked (role removed): <@{user_id}> → **{matched_key}**")
 
 @bot.event
 async def on_ready():
-    print(f"[BOT] Logged in as {bot.user} \u2014 online")
+    print(f"[BOT] Logged in as {bot.user} — online")
     expiry = os.environ.get("TOKEN_EXPIRES_UNIX", "")
     if expiry:
         print(f"[TOKEN] Loaded expiry from env: {expiry}")
