@@ -26,7 +26,7 @@ WB_STATE_FILE   = "worldboss_state.json"
 WB_SCHEDULE_URL = "https://api-v1.degenidle.com/api/worldboss/schedule?limit=5"
 WB_SEND_MINUTES_BEFORE = 5
 WB_LOOKAHEAD_MINUTES   = 10
-MAX_DONATIONS_PER_DAY  = 20
+MAX_DONATIONS_PER_DAY  = 25
 SKILLS = [
     "mining", "woodcutting", "tracking", "fishing", "gathering",
     "herbalism", "forging", "leatherworking", "tailoring", "crafting",
@@ -56,19 +56,19 @@ RENDER_API_KEY        = os.environ.get("RENDER_API_KEY", "").strip()
 RENDER_SERVICE_ID     = os.environ.get("RENDER_SERVICE_ID", "").strip()
 WB_ROLE_ID            = os.environ.get("WORLD_BOSS_ROLE_ID", "").strip()
 
-DAILY_DONATIONS_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/daily?day=today&characterId={CHAR_ID}"
+DAILY_DONATIONS_URL  = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/daily?day=today&characterId={CHAR_ID}"
 WEEKLY_DONATIONS_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
-RESOURCES_URL   = f"{BASE}/guilds/{DEGEN_GUILD_ID}/resources?characterId={CHAR_ID}"
-GUILD_API       = f"{BASE}/guilds/character/{CHAR_ID}"
-PROFILE_API     = f"{BASE}/characters/profile/{{name}}"
-LEADERBOARD_API = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
+RESOURCES_URL        = f"{BASE}/guilds/{DEGEN_GUILD_ID}/resources?characterId={CHAR_ID}"
+GUILD_API            = f"{BASE}/guilds/character/{CHAR_ID}"
+PROFILE_API          = f"{BASE}/characters/profile/{{name}}"
+LEADERBOARD_API      = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
 
 # ── Fixed UTC schedule times ──────────────────────────────────────────────────────────────────────────
-GIVEAWAY_TIME  = dtime(hour=0,  minute=0, tzinfo=timezone.utc)   # Mon 00:00 UTC
-DONATIONS_TIME = dtime(hour=18, minute=0, tzinfo=timezone.utc)   # Daily 18:00 UTC
+GIVEAWAY_TIME  = dtime(hour=0,  minute=0, tzinfo=timezone.utc)
+DONATIONS_TIME = dtime(hour=18, minute=0, tzinfo=timezone.utc)
 ACTIVITY_TIMES = [
-    dtime(hour=0,  minute=0, tzinfo=timezone.utc),                # 00:00 UTC
-    dtime(hour=12, minute=0, tzinfo=timezone.utc),                # 12:00 UTC
+    dtime(hour=0,  minute=0, tzinfo=timezone.utc),
+    dtime(hour=12, minute=0, tzinfo=timezone.utc),
 ]
 
 intents = discord.Intents.default()
@@ -269,14 +269,19 @@ def get_guild_member_names(headers):
         return []
 
 def get_daily_limit(headers):
-    r = requests.get(RESOURCES_URL, headers=headers, timeout=15)
-    r.raise_for_status()
-    data = r.json()
-    if isinstance(data, list):
-        for item in data:
-            if "daily_limit" in item:
-                return item["daily_limit"]
-    return data.get("daily_limit", 20) if isinstance(data, dict) else 20
+    try:
+        r = requests.get(RESOURCES_URL, headers=headers, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        if isinstance(data, dict) and "daily_limit" in data:
+            return data["daily_limit"]
+        if isinstance(data, list):
+            for item in data:
+                if "daily_limit" in item:
+                    return item["daily_limit"]
+    except Exception as e:
+        print(f"[Resources] Failed to fetch daily_limit: {e}")
+    return MAX_DONATIONS_PER_DAY
 
 def get_weekly_donations(headers):
     r = requests.get(WEEKLY_DONATIONS_URL, headers=headers, timeout=15)
@@ -332,6 +337,9 @@ def run_donations_reminder(webhook_override=None):
         token = get_access_token()
         hdrs = make_headers(token)
         discord_map = load_members()
+        # Fetch per-person daily cap dynamically from resources API
+        per_person_cap = get_daily_limit(hdrs)
+        print(f"[Donations] Per-person daily cap: {per_person_cap}")
         r = requests.get(DAILY_DONATIONS_URL, headers=hdrs, timeout=20)
         r.raise_for_status()
         data = r.json()
@@ -344,21 +352,21 @@ def run_donations_reminder(webhook_override=None):
         return
 
     members = data.get("byMember", [])
-    cap = data.get("cap", MAX_DONATIONS_PER_DAY)
-    used = data.get("used", 0)
-    not_donated = [m for m in members if m.get("count", 0) < cap]
+    guild_cap = data.get("cap", 0)   # total guild cap (e.g. 550) -- used for display only
+    used = data.get("used", 0)       # total donated today across all members
+    not_donated = [m for m in members if m.get("count", 0) < per_person_cap]
 
     if not not_donated:
         print("[Donations] Everyone has hit the cap today.")
         return
 
-    percent = round((used / cap) * 100) if cap > 0 else 0
+    percent = round((used / guild_cap) * 100) if guild_cap > 0 else 0
     hours = hours_until_reset()
     count = len(not_donated)
     member_word = "member" if count == 1 else "members"
 
     lines = [
-        f"Total donations today: {used}/{cap} ({percent}%)",
+        f"Total donations today: {used}/{guild_cap} ({percent}%)",
         f"{count} {member_word} not fully donated:",
         "",
     ]
@@ -387,7 +395,7 @@ def run_donations_reminder(webhook_override=None):
         "allowed_mentions": {"parse": ["users"]}
     }
     requests.post(target_wh, json=payload, timeout=15)
-    print(f"[Donations] Reminder posted — {count} member(s) haven't hit cap today.")
+    print(f"[Donations] Reminder posted — {count} member(s) haven't hit cap ({per_person_cap}) today.")
 
 @tasks.loop(time=DONATIONS_TIME)
 async def donations_loop():
@@ -604,12 +612,13 @@ def parse_joined_at(s):
     except Exception:
         return None
 
-def format_avg_daily_donations(weekly_count, joined_at_str):
+def format_avg_daily_donations(weekly_count, joined_at_str, daily_limit=None):
+    cap = daily_limit or MAX_DONATIONS_PER_DAY
     try:
         joined = parse_joined_at(joined_at_str)
         if not joined: return "?"
         days = min((datetime.now(timezone.utc).date() - joined.date()).days + 1, 7)
-        capped = min(weekly_count, days * MAX_DONATIONS_PER_DAY)
+        capped = min(weekly_count, days * cap)
         avg = capped / days
         return str(int(avg)) if avg == int(avg) else str(round(avg, 1))
     except Exception:
@@ -664,6 +673,7 @@ def run_activity_check():
     headers = make_headers(access_token)
     snapshots = load_snapshots()
     last_check_ts = snapshots.get("_last_run")
+    daily_limit = get_daily_limit(headers)
 
     r = requests.get(GUILD_API, headers=headers, timeout=15)
     r.raise_for_status()
@@ -688,7 +698,7 @@ def run_activity_check():
         prev_streak = prev.get("inactive_streak", 0)
         prev_last_active = prev.get("last_active_ts", now_iso)
         weekly_count = donation_counts.get(name, 0)
-        avg_str = format_avg_daily_donations(weekly_count, member["joined_at"])
+        avg_str = format_avg_daily_donations(weekly_count, member["joined_at"], daily_limit)
         try: avg_raw = float(avg_str)
         except Exception: avg_raw = 0.0
         if prev_skills:
