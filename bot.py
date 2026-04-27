@@ -46,7 +46,7 @@ BOT_TOKEN             = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
 DISCORD_GUILD_ID      = os.environ.get("DISCORD_GUILD_ID", "").strip()
 DONATIONS_ROLE_ID     = os.environ.get("DONATIONS_ROLE_ID", "").strip()
 GIVEAWAY_WEBHOOK_URL  = os.environ.get("DISCORD_GIVEAWAY_WEBHOOK", "").strip()
-LOGS_WEBHOOK_URL      = os.environ.get("DISCORD_LOGS_WEBHOOK", "").strip()
+LOGS_WEBHOOK_URL      = os.environ.get("DONATIONS_WEBHOOK_URL", "").strip()
 WB_WEBHOOK_URL        = os.environ.get("DISCORD_WB_WEBHOOK", "").strip()
 ACTIVITY_WEBHOOK_URL  = os.environ.get("DISCORD_ACTIVITY_WEBHOOK", "").strip()
 ERROR_WEBHOOK_URL     = os.environ.get("ERROR_WEBHOOK_URL", "").strip()
@@ -902,7 +902,7 @@ async def on_message(message):
                 await message.channel.send("No raid history found.")
                 return
             if not LOGS_WEBHOOK_URL:
-                await message.channel.send("DISCORD_LOGS_WEBHOOK is not set.")
+                await message.channel.send("DONATIONS_WEBHOOK_URL is not set.")
                 return
             requests.post(LOGS_WEBHOOK_URL, json={"embeds": [build_boss_embed(raid, lb, members)]}, timeout=15).raise_for_status()
             await message.channel.send("Boss stats posted!")
@@ -919,7 +919,7 @@ async def on_message(message):
                 await message.channel.send("No previous boss raid found.")
                 return
             if not LOGS_WEBHOOK_URL:
-                await message.channel.send("DISCORD_LOGS_WEBHOOK is not set.")
+                await message.channel.send("DONATIONS_WEBHOOK_URL is not set.")
                 return
             requests.post(LOGS_WEBHOOK_URL, json={"embeds": [build_boss_embed(raid, lb, members)]}, timeout=15).raise_for_status()
             await message.channel.send("Previous boss stats posted!")
