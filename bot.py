@@ -61,7 +61,13 @@ GUILD_API     = f"{BASE}/guilds/character/{CHAR_ID}"
 PROFILE_API   = f"{BASE}/characters/profile/{{name}}"
 LEADERBOARD_API = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
 
-GIVEAWAY_TIME = dtime(hour=0, minute=0, tzinfo=timezone.utc)
+# ── Fixed UTC schedule times ──────────────────────────────────────────────────
+GIVEAWAY_TIME    = dtime(hour=0,  minute=0, tzinfo=timezone.utc)   # Mon 00:00 UTC
+DONATIONS_TIME   = dtime(hour=18, minute=0, tzinfo=timezone.utc)   # Daily 18:00 UTC
+ACTIVITY_TIMES   = [
+    dtime(hour=0,  minute=0, tzinfo=timezone.utc),                  # 00:00 UTC
+    dtime(hour=12, minute=0, tzinfo=timezone.utc),                  # 12:00 UTC
+]
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -308,6 +314,54 @@ def get_role_member_ids():
         after = batch[-1]["user"]["id"]
     return {m["user"]["id"] for m in members if DONATIONS_ROLE_ID in m["roles"]}
 
+# ── Donations post ────────────────────────────────────────────────────────────
+def run_donations_post():
+    print(f"\n── Donations Post @ {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} ──")
+    try:
+        token = get_access_token()
+        headers = make_headers(token)
+        donations = get_weekly_donations(headers)
+        daily_limit = get_daily_limit(headers)
+        discord_map = load_members()
+        role_ids = get_role_member_ids()
+    except Exception as e:
+        send_error_alert(f"Donations post failed: {e}")
+        return
+
+    if not donations:
+        print("[Donations] No donation data returned.")
+        return
+
+    lines = []
+    for player in sorted(donations, key=lambda x: x.get("count", 0), reverse=True):
+        name = get_player_name(player)
+        count = player.get("count", 0)
+        discord_id = discord_map.get(name, "")
+        mention = f"<@{discord_id}>" if discord_id else f"**{name}**"
+        lines.append(f"{mention} — {count}")
+
+    now_utc = datetime.now(timezone.utc)
+    wh = LOGS_WEBHOOK_URL
+    if not wh:
+        print("[Donations] No DONATIONS_WEBHOOK_URL set.")
+        return
+
+    requests.post(wh, json={
+        "username": "SleepingForest Guild",
+        "embeds": [{
+            "title": "📦 Weekly Donations",
+            "description": "\n".join(lines) if lines else "No donations recorded this week.",
+            "color": 0x01696f,
+            "footer": {"text": f"SleepingForest • Daily limit: {daily_limit}"},
+            "timestamp": now_utc.isoformat()
+        }]
+    }, timeout=15)
+    print(f"[Donations] Posted {len(lines)} entries.")
+
+@tasks.loop(time=DONATIONS_TIME)
+async def donations_loop():
+    await asyncio.get_running_loop().run_in_executor(None, run_donations_post)
+
 # ── Giveaway ──────────────────────────────────────────────────────────────────
 def get_week_ending():
     now = datetime.now(timezone.utc)
@@ -354,12 +408,12 @@ def run_giveaway_logic():
     footer_text = f"Week ending {week_ending} • Daily limit: {daily_limit}"
     if not eligible:
         requests.post(GIVEAWAY_WEBHOOK_URL, json={"username": "SleepingForest Giveaway", "embeds": [{
-            "title": "Weekly Donations Giveaway",
-            "description": "No winner this week.\nNobody hit the donation cap every day.\nBetter luck next week!",
-            "color": 0x958AEA,
-            "footer": {"text": footer_text},
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }]}, timeout=15).raise_for_status()
+                "title": "Weekly Donations Giveaway",
+                "description": "No winner this week.\nNobody hit the donation cap every day.\nBetter luck next week!",
+                "color": 0x958AEA,
+                "footer": {"text": footer_text},
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }]}, timeout=15).raise_for_status()
         return "posted: no eligible players", logs
     winner = random.choice(eligible)
     count = len(eligible)
@@ -636,7 +690,7 @@ def run_activity_check():
     else:
         requests.post(wh, json={"username": "SleepingForest Warden", "embeds": [{"title": "All Members Active", "description": f"Every guild member gained XP since the last check **({since} ago)**.", "color": 0x27AE60, "footer": {"text": "SleepingForest"}, "timestamp": now_iso}]}, timeout=10)
 
-@tasks.loop(minutes=360)
+@tasks.loop(time=ACTIVITY_TIMES)
 async def activity_check_loop():
     await asyncio.get_running_loop().run_in_executor(None, run_activity_check)
 
@@ -963,6 +1017,8 @@ async def on_ready():
         print(f"[TOKEN] Loaded expiry from env: {expiry}")
     if not weekly_giveaway.is_running():
         weekly_giveaway.start()
+    if not donations_loop.is_running():
+        donations_loop.start()
     if not worldboss_loop.is_running():
         worldboss_loop.start()
     if not activity_check_loop.is_running():
