@@ -1064,11 +1064,11 @@ async def on_message(message):
 
     elif content.lower() == "!botcommands":
         embed = discord.Embed(title="SleepingForest Bot Commands", description="Commands available for your current roles.", color=0x958AEA)
-        embed.add_field(name="Members", value="`!link YourIngameName`\nLink your Discord to your in-game character\n\n`!unlink`\nUnlink your own account", inline=False)
+        embed.add_field(name="🌸 Members", value="`!link YourIngameName`\nLink your Discord to your in-game character\n\n`!unlink`\nUnlink your own account", inline=False)
         if is_officer or is_admin or is_owner:
-            embed.add_field(name="Officers", value="`!bossstats`\nPost the latest boss raid report\n\n`!previousboss`\nPost the previous boss raid report", inline=False)
+            embed.add_field(name="🌿 Officers", value="`!bossstats`\nPost the latest boss raid report\n\n`!previousboss`\nPost the previous boss raid report", inline=False)
         if is_admin or is_owner:
-            embed.add_field(name="Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck live token expiry and rotation status", inline=False)
+            embed.add_field(name="✨ Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck live token expiry and rotation status", inline=False)
         embed.set_footer(text="Role-aware command list")
         await message.channel.send(embed=embed)
 
