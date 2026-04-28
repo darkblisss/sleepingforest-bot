@@ -46,8 +46,8 @@ BOT_TOKEN             = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
 DISCORD_GUILD_ID      = os.environ.get("DISCORD_GUILD_ID", "").strip()
 DONATIONS_ROLE_ID     = os.environ.get("DONATIONS_ROLE_ID", "").strip()
 GIVEAWAY_WEBHOOK_URL  = os.environ.get("DISCORD_GIVEAWAY_WEBHOOK", "").strip()
-DONATIONS_WEBHOOK_URL = os.environ.get("DONATIONS_WEBHOOK_URL", "").strip()  # public donations channel
-LOGS_WEBHOOK_URL      = os.environ.get("DISCORD_LOGS_WEBHOOK", "").strip()   # #logs channel
+DONATIONS_WEBHOOK_URL = os.environ.get("DONATIONS_WEBHOOK_URL", "").strip()
+LOGS_WEBHOOK_URL      = os.environ.get("DISCORD_LOGS_WEBHOOK", "").strip()
 WB_WEBHOOK_URL        = os.environ.get("DISCORD_WB_WEBHOOK", "").strip()
 ACTIVITY_WEBHOOK_URL  = os.environ.get("DISCORD_ACTIVITY_WEBHOOK", "").strip()
 ERROR_WEBHOOK_URL     = os.environ.get("ERROR_WEBHOOK_URL", "").strip()
@@ -55,6 +55,7 @@ GH_PAT                = os.environ.get("GH_PAT", "").strip()
 RENDER_API_KEY        = os.environ.get("RENDER_API_KEY", "").strip()
 RENDER_SERVICE_ID     = os.environ.get("RENDER_SERVICE_ID", "").strip()
 WB_ROLE_ID            = os.environ.get("WORLD_BOSS_ROLE_ID", "").strip()
+RELOAD_TOKEN_SECRET   = os.environ.get("RELOAD_TOKEN_SECRET", "").strip()
 
 DAILY_DONATIONS_URL  = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/daily?day=today&characterId={CHAR_ID}"
 WEEKLY_DONATIONS_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
@@ -83,6 +84,25 @@ flask_app = Flask(__name__)
 @flask_app.route("/")
 def health():
     return "OK", 200
+
+@flask_app.route("/reload-token", methods=["POST"])
+def reload_token():
+    secret = flask_request.headers.get("X-Reload-Secret", "")
+    if not RELOAD_TOKEN_SECRET or secret != RELOAD_TOKEN_SECRET:
+        return {"error": "unauthorized"}, 401
+    data = flask_request.get_json(silent=True) or {}
+    new_token = data.get("token", "").strip()
+    if not new_token or len(new_token) < 20:
+        return {"error": "invalid token"}, 400
+    old_token = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
+    if new_token == old_token:
+        return {"status": "unchanged"}, 200
+    os.environ["DEGEN_REFRESH_TOKEN"] = new_token
+    expires_unix = int(time.time()) + 86400
+    os.environ["TOKEN_EXPIRES_UNIX"] = str(expires_unix)
+    _post_token_log(new_token, expires_in=86400)
+    print(f"[RELOAD] Token hot-reloaded via webhook: ...{new_token[-4:]}")
+    return {"status": "updated", "ending": new_token[-4:]}, 200
 
 def run_flask():
     port = int(os.environ.get("PORT", "10000"))
@@ -191,7 +211,6 @@ def get_access_token():
     return data["access_token"]
 
 def check_token_expiry():
-    """Hit the token endpoint live and return (expires_unix, rotated, endings, error) without side effects."""
     stored_refresh = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
     if not stored_refresh:
         return None, None, None, "No DEGEN_REFRESH_TOKEN set."
