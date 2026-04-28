@@ -98,7 +98,7 @@ def send_error_alert(message):
         except Exception:
             pass
 
-# ── Token helpers ───────────────────────────────────────────────────────────────────────────────
+# ── Token helpers ──────────────────────────────────────────────────────────────────────────────
 def _post_token_log(new_token, expires_in=86400):
     expires_unix = int(time.time()) + expires_in
     os.environ["TOKEN_EXPIRES_UNIX"] = str(expires_unix)
@@ -189,6 +189,29 @@ def get_access_token():
     else:
         send_error_alert("⛔ No new refresh_token returned — rotation will break within 24h")
     return data["access_token"]
+
+def check_token_expiry():
+    """Hit the token endpoint live and return (expires_unix, rotated, new_refresh_ending) without side effects."""
+    stored_refresh = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
+    if not stored_refresh:
+        return None, None, None, "No DEGEN_REFRESH_TOKEN set."
+    try:
+        r = requests.post(
+            "https://auth.degenidle.com/oauth2/token",
+            data={"client_id": CLIENT_ID, "grant_type": "refresh_token", "refresh_token": stored_refresh},
+            timeout=20
+        )
+        r.raise_for_status()
+    except Exception as e:
+        return None, None, None, f"Token request failed: {e}"
+    data = r.json()
+    expires_in = data.get("expires_in", 0)
+    expires_unix = int(time.time()) + expires_in
+    returned_refresh = data.get("refresh_token", "")
+    rotated = bool(returned_refresh and returned_refresh != stored_refresh)
+    new_ending = f"...{returned_refresh[-4:]}" if returned_refresh else "(none returned)"
+    stored_ending = f"...{stored_refresh[-4:]}"
+    return expires_unix, rotated, (stored_ending, new_ending), None
 
 def make_headers(access_token):
     return {
@@ -337,7 +360,6 @@ def run_donations_reminder(webhook_override=None):
         token = get_access_token()
         hdrs = make_headers(token)
         discord_map = load_members()
-        # Fetch per-person daily cap dynamically from resources API
         per_person_cap = get_daily_limit(hdrs)
         print(f"[Donations] Per-person daily cap: {per_person_cap}")
         r = requests.get(DAILY_DONATIONS_URL, headers=hdrs, timeout=20)
@@ -352,8 +374,8 @@ def run_donations_reminder(webhook_override=None):
         return
 
     members = data.get("byMember", [])
-    guild_cap = data.get("cap", 0)   # total guild cap (e.g. 550) -- used for display only
-    used = data.get("used", 0)       # total donated today across all members
+    guild_cap = data.get("cap", 0)
+    used = data.get("used", 0)
     not_donated = [m for m in members if m.get("count", 0) < per_person_cap]
 
     if not not_donated:
@@ -990,11 +1012,22 @@ async def on_message(message):
 
     elif content.lower() == "!tokenexpiry":
         if not is_owner and not is_admin: return
-        expires_unix = os.environ.get("TOKEN_EXPIRES_UNIX", "")
-        if not expires_unix:
-            await message.channel.send("No token expiry on record yet.")
+        await message.channel.send("🔄 Checking token status live...")
+        expires_unix, rotated, endings, err = await asyncio.get_running_loop().run_in_executor(None, check_token_expiry)
+        if err:
+            await message.channel.send(f"❌ {err}")
             return
-        await message.channel.send(f"**DegenIdle Token Expiry**\nExpires: <t:{expires_unix}:R> (<t:{expires_unix}:f>)")
+        stored_end, new_end = endings
+        rotation_line = (
+            f"🔄 **Token was rotated** during this check\n• Was: `{stored_end}` → Now: `{new_end}`"
+            if rotated else
+            f"✅ Refresh token unchanged (`{stored_end}`)"
+        )
+        await message.channel.send(
+            f"🔑 **DegenIdle Token Expiry**\n"
+            f"Access token expires: <t:{expires_unix}:R> (<t:{expires_unix}:f>)\n"
+            f"{rotation_line}"
+        )
 
     elif content.lower() == "!bossstats":
         if not is_owner and not is_officer:
@@ -1036,7 +1069,7 @@ async def on_message(message):
         if is_officer or is_admin or is_owner:
             embed.add_field(name="🌿 Officers", value="`!bossstats`\nPost the latest boss raid report\n\n`!previousboss`\nPost the previous boss raid report", inline=False)
         if is_admin or is_owner:
-            embed.add_field(name="✨ Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck token expiry", inline=False)
+            embed.add_field(name="✨ Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck live token expiry and rotation status", inline=False)
         embed.set_footer(text="Role-aware command list")
         await message.channel.send(embed=embed)
 
