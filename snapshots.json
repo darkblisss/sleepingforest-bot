@@ -1,5 +1,5 @@
 {
-  "_last_run": "2026-05-14T12:00:02.035142+00:00",
+  "_last_run": "2026-05-14T12:00:15.493750+00:00",
   "Bloss": {
     "skills": {
       "mining": 393290,
@@ -9,7 +9,7 @@
       "gathering": 1676832,
       "herbalism": 0,
       "forging": 0,
-      "leatherworking": 4073851,
+      "leatherworking": 4073888,
       "tailoring": 1910398,
       "crafting": 600,
       "cooking": 0,
@@ -22,9 +22,9 @@
       "exorcism": 0,
       "tinkering": 5702
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
+    "last_active_ts": "2026-05-14T12:00:15.493750+00:00"
   },
   "Judgement": {
     "skills": {
@@ -48,8 +48,8 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "DanteSylens0": {
@@ -74,8 +74,8 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "Lumina": {
@@ -100,8 +100,8 @@
       "exorcism": 0,
       "tinkering": 5711
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "HokageJoyboy": {
@@ -126,8 +126,8 @@
       "exorcism": 0,
       "tinkering": 14726
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "Madeira": {
@@ -152,8 +152,8 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "Shinzo": {
@@ -178,8 +178,8 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "Harriet": {
@@ -204,8 +204,8 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "SOSxREKT": {
@@ -230,8 +230,8 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "Nocturna": {
@@ -256,8 +256,8 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "Sliegh": {
@@ -282,8 +282,8 @@
       "exorcism": 0,
       "tinkering": 11954
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "StitchAMG": {
@@ -308,8 +308,8 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "MMX": {
@@ -334,15 +334,15 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "Tessera": {
     "skills": {
       "mining": 102454,
       "woodcutting": 0,
-      "tracking": 6079666,
+      "tracking": 6079667,
       "fishing": 0,
       "gathering": 668,
       "herbalism": 0,
@@ -360,9 +360,9 @@
       "exorcism": 35832,
       "tinkering": 100513
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
+    "last_active_ts": "2026-05-14T12:00:15.493750+00:00"
   },
   "Gratchet": {
     "skills": {
@@ -386,8 +386,8 @@
       "exorcism": 0,
       "tinkering": 5760
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "IdkU": {
@@ -412,8 +412,8 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "Arodeth": {
@@ -438,8 +438,8 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "MushyMango": {
@@ -464,8 +464,8 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "Calypte": {
@@ -490,8 +490,8 @@
       "exorcism": 52861,
       "tinkering": 109104
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "TakTakYahobi": {
@@ -516,8 +516,8 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "SPAZZ": {
@@ -530,7 +530,7 @@
       "herbalism": 638516,
       "forging": 1432,
       "leatherworking": 21,
-      "tailoring": 520867,
+      "tailoring": 520869,
       "crafting": 19600,
       "cooking": 5522,
       "alchemy": 509988,
@@ -542,9 +542,9 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
+    "last_active_ts": "2026-05-14T12:00:15.493750+00:00"
   },
   "Linxi": {
     "skills": {
@@ -568,8 +568,8 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "Sinnbad": {
@@ -594,15 +594,15 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "Mephu": {
     "skills": {
       "mining": 33471,
       "woodcutting": 6866,
-      "tracking": 9266,
+      "tracking": 9268,
       "fishing": 3600,
       "gathering": 1472,
       "herbalism": 1992,
@@ -620,15 +620,15 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
+    "last_active_ts": "2026-05-14T12:00:15.493750+00:00"
   },
   "EchoByte": {
     "skills": {
       "mining": 5690,
       "woodcutting": 1618,
-      "tracking": 3473,
+      "tracking": 3474,
       "fishing": 801,
       "gathering": 1556,
       "herbalism": 3299,
@@ -646,9 +646,9 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
+    "last_active_ts": "2026-05-14T12:00:15.493750+00:00"
   },
   "Dreadlash": {
     "skills": {
@@ -672,8 +672,8 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-14T12:00:02.035142+00:00",
-    "inactive_streak": 0,
+    "timestamp": "2026-05-14T12:00:15.493750+00:00",
+    "inactive_streak": 1,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   }
 }
