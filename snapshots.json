@@ -1,5 +1,5 @@
 {
-  "_last_run": "2026-05-18T12:00:01.628232+00:00",
+  "_last_run": "2026-05-19T00:00:02.212980+00:00",
   "Bloss": {
     "skills": {
       "mining": 393290,
@@ -10,11 +10,11 @@
       "herbalism": 0,
       "forging": 0,
       "leatherworking": 4219314,
-      "tailoring": 1960015,
+      "tailoring": 1980661,
       "crafting": 600,
       "cooking": 0,
       "alchemy": 0,
-      "combat": 3967699,
+      "combat": 3985924,
       "woodcrafting": 0,
       "dungeoneering": 540437,
       "bloomtide": 0,
@@ -22,9 +22,9 @@
       "exorcism": 0,
       "tinkering": 5702
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "Judgement": {
     "skills": {
@@ -32,7 +32,7 @@
       "woodcutting": 0,
       "tracking": 2659969,
       "fishing": 0,
-      "gathering": 2387078,
+      "gathering": 2410610,
       "herbalism": 0,
       "forging": 0,
       "leatherworking": 0,
@@ -40,7 +40,7 @@
       "crafting": 0,
       "cooking": 0,
       "alchemy": 0,
-      "combat": 3147172,
+      "combat": 3163916,
       "woodcrafting": 0,
       "dungeoneering": 1440,
       "bloomtide": 0,
@@ -48,15 +48,15 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "DanteSylens0": {
     "skills": {
       "mining": 35149,
       "woodcutting": 19116,
-      "tracking": 1949727,
+      "tracking": 1978106,
       "fishing": 0,
       "gathering": 48697,
       "herbalism": 0,
@@ -66,7 +66,7 @@
       "crafting": 0,
       "cooking": 0,
       "alchemy": 0,
-      "combat": 2647348,
+      "combat": 2690473,
       "woodcrafting": 0,
       "dungeoneering": 41040,
       "bloomtide": 2733,
@@ -74,9 +74,9 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "Lumina": {
     "skills": {
@@ -87,22 +87,22 @@
       "gathering": 139531,
       "herbalism": 77437,
       "forging": 116681,
-      "leatherworking": 356100,
+      "leatherworking": 372204,
       "tailoring": 120410,
       "crafting": 115416,
       "cooking": 48568,
       "alchemy": 74995,
-      "combat": 463509,
+      "combat": 471669,
       "woodcrafting": 115452,
       "dungeoneering": 308033,
       "bloomtide": 12550,
-      "bossing": 229908,
+      "bossing": 230868,
       "exorcism": 0,
       "tinkering": 5711
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "HokageJoyboy": {
     "skills": {
@@ -110,7 +110,7 @@
       "woodcutting": 83107,
       "tracking": 143045,
       "fishing": 348276,
-      "gathering": 221733,
+      "gathering": 223586,
       "herbalism": 58615,
       "forging": 19656,
       "leatherworking": 6453,
@@ -126,9 +126,9 @@
       "exorcism": 0,
       "tinkering": 14726
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "Madeira": {
     "skills": {
@@ -142,7 +142,7 @@
       "leatherworking": 325,
       "tailoring": 37423,
       "crafting": 0,
-      "cooking": 164653,
+      "cooking": 168811,
       "alchemy": 55511,
       "combat": 56219,
       "woodcrafting": 0,
@@ -152,9 +152,9 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
-    "inactive_streak": 1,
-    "last_active_ts": "2026-05-18T00:00:02.493788+00:00"
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
+    "inactive_streak": 0,
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "Shinzo": {
     "skills": {
@@ -178,13 +178,13 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
-    "inactive_streak": 9,
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
+    "inactive_streak": 10,
     "last_active_ts": "2026-05-14T12:00:02.035142+00:00"
   },
   "Harriet": {
     "skills": {
-      "mining": 807085,
+      "mining": 825847,
       "woodcutting": 6738,
       "tracking": 59679,
       "fishing": 636793,
@@ -196,7 +196,7 @@
       "crafting": 6800,
       "cooking": 211815,
       "alchemy": 13203,
-      "combat": 508695,
+      "combat": 514921,
       "woodcrafting": 639,
       "dungeoneering": 172248,
       "bloomtide": 2256,
@@ -204,15 +204,15 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "SOSxREKT": {
     "skills": {
       "mining": 8201,
       "woodcutting": 407643,
-      "tracking": 293073,
+      "tracking": 302907,
       "fishing": 0,
       "gathering": 440,
       "herbalism": 1171,
@@ -222,7 +222,7 @@
       "crafting": 4600,
       "cooking": 0,
       "alchemy": 585,
-      "combat": 500698,
+      "combat": 505612,
       "woodcrafting": 1417,
       "dungeoneering": 36930,
       "bloomtide": 25866,
@@ -230,9 +230,9 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "Nocturna": {
     "skills": {
@@ -248,21 +248,21 @@
       "crafting": 600,
       "cooking": 7952,
       "alchemy": 1883,
-      "combat": 1421543,
-      "woodcrafting": 952811,
+      "combat": 1443029,
+      "woodcrafting": 968993,
       "dungeoneering": 39720,
       "bloomtide": 0,
       "bossing": 6720,
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "Sliegh": {
     "skills": {
-      "mining": 229572,
+      "mining": 232687,
       "woodcutting": 75364,
       "tracking": 161211,
       "fishing": 153794,
@@ -282,13 +282,13 @@
       "exorcism": 0,
       "tinkering": 11954
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "StitchAMG": {
     "skills": {
-      "mining": 1282309,
+      "mining": 1306843,
       "woodcutting": 5978,
       "tracking": 23226,
       "fishing": 8946,
@@ -300,7 +300,7 @@
       "crafting": 400,
       "cooking": 42,
       "alchemy": 0,
-      "combat": 594075,
+      "combat": 604407,
       "woodcrafting": 187,
       "dungeoneering": 23640,
       "bloomtide": 9778,
@@ -308,13 +308,13 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "MMX": {
     "skills": {
-      "mining": 39099,
+      "mining": 43104,
       "woodcutting": 71281,
       "tracking": 7,
       "fishing": 157994,
@@ -328,21 +328,21 @@
       "alchemy": 0,
       "combat": 47527,
       "woodcrafting": 0,
-      "dungeoneering": 35190,
+      "dungeoneering": 37170,
       "bloomtide": 776,
       "bossing": 0,
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "Tessera": {
     "skills": {
       "mining": 102454,
       "woodcutting": 0,
-      "tracking": 6111558,
+      "tracking": 6116357,
       "fishing": 0,
       "gathering": 668,
       "herbalism": 0,
@@ -360,14 +360,14 @@
       "exorcism": 35832,
       "tinkering": 100513
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "Gratchet": {
     "skills": {
       "mining": 170844,
-      "woodcutting": 83070,
+      "woodcutting": 88548,
       "tracking": 80927,
       "fishing": 93456,
       "gathering": 93093,
@@ -375,20 +375,20 @@
       "forging": 115336,
       "leatherworking": 93181,
       "tailoring": 47374,
-      "crafting": 116382,
+      "crafting": 118582,
       "cooking": 46728,
       "alchemy": 49293,
       "combat": 141718,
-      "woodcrafting": 47736,
-      "dungeoneering": 146307,
+      "woodcrafting": 47846,
+      "dungeoneering": 149079,
       "bloomtide": 1200,
       "bossing": 0,
       "exorcism": 0,
       "tinkering": 5760
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "IdkU": {
     "skills": {
@@ -398,7 +398,7 @@
       "fishing": 4028,
       "gathering": 0,
       "herbalism": 0,
-      "forging": 13625,
+      "forging": 14445,
       "leatherworking": 0,
       "tailoring": 0,
       "crafting": 800,
@@ -412,9 +412,9 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "Arodeth": {
     "skills": {
@@ -438,15 +438,15 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
-    "inactive_streak": 4,
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
+    "inactive_streak": 5,
     "last_active_ts": "2026-05-16T12:00:02.269023+00:00"
   },
   "MushyMango": {
     "skills": {
       "mining": 16502,
       "woodcutting": 15283,
-      "tracking": 171066,
+      "tracking": 182099,
       "fishing": 12183,
       "gathering": 16751,
       "herbalism": 6620,
@@ -456,7 +456,7 @@
       "crafting": 6800,
       "cooking": 5914,
       "alchemy": 5728,
-      "combat": 68974,
+      "combat": 81555,
       "woodcrafting": 7640,
       "dungeoneering": 46965,
       "bloomtide": 4320,
@@ -464,13 +464,13 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "Calypte": {
     "skills": {
-      "mining": 471426,
+      "mining": 484395,
       "woodcutting": 801776,
       "tracking": 328605,
       "fishing": 75400,
@@ -482,7 +482,7 @@
       "crafting": 288000,
       "cooking": 50904,
       "alchemy": 73337,
-      "combat": 1002368,
+      "combat": 1004107,
       "woodcrafting": 626784,
       "dungeoneering": 1690162,
       "bloomtide": 76084,
@@ -490,35 +490,35 @@
       "exorcism": 52861,
       "tinkering": 109104
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "TakTakYahobi": {
     "skills": {
       "mining": 58913,
       "woodcutting": 3890,
       "tracking": 31521,
-      "fishing": 4164,
+      "fishing": 5942,
       "gathering": 31877,
-      "herbalism": 17195,
+      "herbalism": 17871,
       "forging": 4338,
       "leatherworking": 105,
       "tailoring": 2110,
       "crafting": 1200,
-      "cooking": 1079,
+      "cooking": 1764,
       "alchemy": 1519,
       "combat": 34498,
       "woodcrafting": 747,
       "dungeoneering": 11280,
       "bloomtide": 0,
-      "bossing": 9780,
+      "bossing": 10740,
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "SPAZZ": {
     "skills": {
@@ -526,15 +526,15 @@
       "woodcutting": 7579,
       "tracking": 4390,
       "fishing": 11044,
-      "gathering": 705779,
+      "gathering": 725238,
       "herbalism": 638516,
       "forging": 1432,
       "leatherworking": 21,
       "tailoring": 570540,
       "crafting": 19600,
       "cooking": 5522,
-      "alchemy": 542021,
-      "combat": 576616,
+      "alchemy": 546545,
+      "combat": 587638,
       "woodcrafting": 6365,
       "dungeoneering": 382249,
       "bloomtide": 62513,
@@ -542,15 +542,15 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "Linxi": {
     "skills": {
       "mining": 76244,
       "woodcutting": 1440,
-      "tracking": 765701,
+      "tracking": 774491,
       "fishing": 0,
       "gathering": 871,
       "herbalism": 0,
@@ -560,7 +560,7 @@
       "crafting": 64098,
       "cooking": 0,
       "alchemy": 0,
-      "combat": 212181,
+      "combat": 218086,
       "woodcrafting": 0,
       "dungeoneering": 186072,
       "bloomtide": 57054,
@@ -568,9 +568,9 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "Sinnbad": {
     "skills": {
@@ -585,18 +585,18 @@
       "tailoring": 32533,
       "crafting": 0,
       "cooking": 5837,
-      "alchemy": 13778,
+      "alchemy": 19586,
       "combat": 56147,
       "woodcrafting": 0,
-      "dungeoneering": 6660,
+      "dungeoneering": 8580,
       "bloomtide": 0,
       "bossing": 0,
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "Mephu": {
     "skills": {
@@ -620,16 +620,16 @@
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
-    "inactive_streak": 7,
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
+    "inactive_streak": 8,
     "last_active_ts": "2026-05-15T00:00:01.592463+00:00"
   },
   "EchoByte": {
     "skills": {
-      "mining": 9902,
+      "mining": 11217,
       "woodcutting": 1618,
       "tracking": 5961,
-      "fishing": 1598,
+      "fishing": 2093,
       "gathering": 6535,
       "herbalism": 3299,
       "forging": 1462,
@@ -638,43 +638,43 @@
       "crafting": 1200,
       "cooking": 354,
       "alchemy": 0,
-      "combat": 3799,
+      "combat": 3971,
       "woodcrafting": 808,
-      "dungeoneering": 4800,
+      "dungeoneering": 4920,
       "bloomtide": 0,
       "bossing": 0,
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "Dreadlash": {
     "skills": {
-      "mining": 35371,
+      "mining": 40866,
       "woodcutting": 878,
-      "tracking": 78983,
+      "tracking": 79166,
       "fishing": 0,
       "gathering": 4027,
       "herbalism": 215,
       "forging": 213,
-      "leatherworking": 36028,
+      "leatherworking": 39871,
       "tailoring": 40,
       "crafting": 8400,
       "cooking": 0,
       "alchemy": 0,
-      "combat": 76510,
+      "combat": 77785,
       "woodcrafting": 58,
-      "dungeoneering": 16320,
+      "dungeoneering": 20970,
       "bloomtide": 0,
-      "bossing": 5760,
+      "bossing": 6720,
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   },
   "CAPYBARA": {
     "skills": {
@@ -685,21 +685,21 @@
       "gathering": 3067,
       "herbalism": 1994,
       "forging": 1453,
-      "leatherworking": 12717,
+      "leatherworking": 16161,
       "tailoring": 842,
       "crafting": 800,
       "cooking": 398,
       "alchemy": 463,
-      "combat": 18150,
+      "combat": 19655,
       "woodcrafting": 323,
-      "dungeoneering": 2280,
+      "dungeoneering": 3180,
       "bloomtide": 0,
       "bossing": 960,
       "exorcism": 0,
       "tinkering": 0
     },
-    "timestamp": "2026-05-18T12:00:01.628232+00:00",
+    "timestamp": "2026-05-19T00:00:02.212980+00:00",
     "inactive_streak": 0,
-    "last_active_ts": "2026-05-18T12:00:01.628232+00:00"
+    "last_active_ts": "2026-05-19T00:00:02.212980+00:00"
   }
 }
