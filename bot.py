@@ -600,11 +600,11 @@ def fetch_boss_raid(offset=0):
         members = {}
     return raid, lb, members
 
-def build_boss_embed(raid, lb, members=None):
+def build_boss_message(raid, lb, members=None):
+    """Returns a plain Discord message string using a monospace code block."""
     boss = raid["boss"]
     entries = lb.get("data", [])
     total = float(raid["total_damage_dealt"]) if raid["total_damage_dealt"] else 0.0
-    hp_remaining_pct = max(0.0, 100.0 - (total / boss["max_hp"] * 100 if boss["max_hp"] else 0.0))
     defeated = raid["boss_defeated"]
 
     def fmt(n):
@@ -621,50 +621,72 @@ def build_boss_embed(raid, lb, members=None):
         secs = max(1, (e - s).total_seconds())
     dur = (lambda m, sc: f"{m}m {sc}s" if m else f"{sc}s")(*divmod(int(secs), 60)) if secs else "N/A"
     dt = datetime.fromisoformat(raid["scheduled_time"].replace(" ", "T").split("+")[0] + "+00:00")
-    date_str = dt.strftime("%d %b %Y")
+    date_str = dt.strftime("%b %d, %Y, %I:%M %p")
     init_id = raid.get("initiator_character_id", "")
     init_name = (members or {}).get(init_id) or next((e["character_name"] for e in entries if e.get("character_id") == init_id), "Unknown")
 
-    def bar(pct, w=14):
-        f = int(pct / 100 * w)
-        return chr(9608)*f + chr(9617)*(w-f)
+    status_str = "Victory" if defeated else "Defeat"
+    total_dmg = fmt(total)
+    participant_count = len(entries)
+    guild_size = len(members) if members else participant_count
 
-    status_line = "**Boss Defeated**" if defeated else "**Boss Survived**"
-    hp_val = f"`[{bar(hp_remaining_pct)}]` **{round(hp_remaining_pct,1)}% HP remaining**\n{fmt(boss['max_hp'] - total)} HP left"
+    sep = "-" * 70
 
-    if not entries:
-        part_val = "Nobody joined this raid."
-    else:
-        # Determine which players died (0 HP or hp_remaining <= 0 means survived;
-        # character_hp_remaining == 0 means died in the raid)
-        lines = []
-        for i, e in enumerate(entries):
-            dps = e["damage_dealt"] / secs if secs else 0
-            rank = f"**#1**" if i == 0 else (f"**#2**" if i == 1 else (f"**#3**" if i == 2 else f"#{i+1}"))
-            name = e["character_name"]
-            died = e.get("character_hp_remaining") is not None and float(e.get("character_hp_remaining", 1)) <= 0
-            if died:
-                name_fmt = f"~~{name}~~"
-            elif i < 3:
-                name_fmt = f"**{name}**"
-            else:
-                name_fmt = name
-            lines.append(f"{rank} {name_fmt} -- {fmt(e['damage_dealt'])} dmg ({round(e['percentage'],1)}%) -- {fmt(dps)}/s")
-        part_val = "\n".join(lines)
+    # Header block
+    lines = [
+        "GUILD RAID DPS STATISTICS",
+        "",
+        f"Boss: {boss['name']} (Lv. {boss['level']})",
+        f"Date: {date_str}",
+        f"Duration: {dur}",
+        f"Status: {status_str}",
+        f"Total Damage: {total_dmg}",
+        f"Initiated by: {init_name}",
+        f"Participants: {participant_count}",
+        "",
+        "DPS LEADERBOARD",
+        sep,
+        f"{'Rank':<6}| {'Player':<20}| {'Damage':>12} | {'DPS':>8} | {'%':>7} | Surv",
+        sep,
+    ]
 
-    return {
-        "title": f"{boss['name']} Lv.{boss['level']} -- Raid Report",
-        "description": status_line,
-        "color": 0x2ECC71 if defeated else 0xB43232,
-        "fields": [
-            {"name": "Date", "value": date_str, "inline": True},
-            {"name": "Duration", "value": dur, "inline": True},
-            {"name": "Initiated by", "value": f"**{init_name}**", "inline": True},
-            {"name": "Boss HP", "value": hp_val, "inline": False},
-            {"name": f"Participants ({len(entries)})", "value": part_val, "inline": False},
-        ],
-        "footer": {"text": f"SleepingForest  \u00b7  {boss['name']} Lv.{boss['level']}"},
-    }
+    # Participant rows
+    participated_ids = set()
+    for i, e in enumerate(entries):
+        participated_ids.add(e.get("character_id"))
+        dps = e["damage_dealt"] / secs if secs else 0
+        rank_str = f"#{i+1}"
+        name = e["character_name"]
+        died = e.get("character_hp_remaining") is not None and float(e.get("character_hp_remaining", 1)) <= 0
+        surv = "DEAD" if died else "ok"
+        # Strikethrough can't be done inside a code block, so mark dead with DEAD in surv column
+        if died:
+            name = f"[RIP] {name}"
+        lines.append(f"{rank_str:<6}| {name:<20}| {fmt(e['damage_dealt']):>12} | {round(dps):>8} | {round(e['percentage'],1):>6}% | {surv}")
+
+    lines.append(sep)
+
+    # Missing members
+    if members:
+        missing = [name for cid, name in members.items() if cid not in participated_ids]
+        missing.sort(key=str.lower)
+        if missing:
+            lines.append("")
+            lines.append(f"Missing Members ({len(missing)}/{guild_size}):")
+            # Wrap into lines of ~70 chars
+            row = ""
+            for i, name in enumerate(missing):
+                part = name if i == 0 else f", {name}"
+                if len(row) + len(part) > 68:
+                    lines.append(row)
+                    row = name
+                else:
+                    row += part
+            if row:
+                lines.append(row)
+
+    inner = "\n".join(lines)
+    return f"```\n{inner}\n```"
 
 # ── Post raid boss stats to raid channel after spawn ──────────────────────────────────────────────
 def _post_raid_boss_stats_after_spawn():
@@ -682,7 +704,7 @@ def _post_raid_boss_stats_after_spawn():
             target_wh,
             json={
                 "username": "SleepingForest Raids",
-                "embeds": [build_boss_embed(raid, lb, members)],
+                "content": build_boss_message(raid, lb, members),
                 "allowed_mentions": {"parse": []},
             },
             timeout=15,
@@ -1217,7 +1239,7 @@ async def on_message(message):
             if not target_wh:
                 await message.channel.send("No DISCORD_LOGS_WEBHOOK is set.")
                 return
-            requests.post(target_wh, json={"username": "SleepingForest Raids", "embeds": [build_boss_embed(raid, lb, members)], "allowed_mentions": {"parse": []}}, timeout=15).raise_for_status()
+            requests.post(target_wh, json={"username": "SleepingForest Raids", "content": build_boss_message(raid, lb, members), "allowed_mentions": {"parse": []}}, timeout=15).raise_for_status()
             await message.channel.send("Boss stats posted to logs channel.")
         except Exception as e:
             await message.channel.send(f"Error: `{e}`")
@@ -1235,8 +1257,8 @@ async def on_message(message):
             if not target_wh:
                 await message.channel.send("No RAID_WEBHOOK_URL or DISCORD_LOGS_WEBHOOK is set.")
                 return
-            requests.post(target_wh, json={"username": "SleepingForest Raids", "embeds": [build_boss_embed(raid, lb, members)], "allowed_mentions": {"parse": []}}, timeout=15).raise_for_status()
-            await message.channel.send("Previous boss stats posted to raid channel!")
+            requests.post(target_wh, json={"username": "SleepingForest Raids", "content": build_boss_message(raid, lb, members), "allowed_mentions": {"parse": []}}, timeout=15).raise_for_status()
+            await message.channel.send("Previous boss stats posted to raid channel.")
         except Exception as e:
             await message.channel.send(f"Error: `{e}`")
 
