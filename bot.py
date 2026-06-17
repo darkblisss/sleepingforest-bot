@@ -58,7 +58,6 @@ RENDER_SERVICE_ID     = os.environ.get("RENDER_SERVICE_ID", "").strip()
 WB_ROLE_ID            = os.environ.get("WORLD_BOSS_ROLE_ID", "").strip()
 RELOAD_TOKEN_SECRET   = os.environ.get("RELOAD_TOKEN_SECRET", "").strip()
 RAID_WEBHOOK_URL      = os.environ.get("RAID_WEBHOOK_URL", "").strip()
-RAID_ROLE_ID          = os.environ.get("RAID_ROLE_ID", "").strip()
 
 DAILY_DONATIONS_URL  = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/daily?day=today&characterId={CHAR_ID}"
 WEEKLY_DONATIONS_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
@@ -658,11 +657,8 @@ def _post_raid_boss_stats_after_spawn():
         if not raid:
             print("[RaidBoss] No raid history found for post-spawn stats")
             return
-        content = ""
-        allowed_mentions = {"parse": []}
-        if RAID_ROLE_ID:
-            content = f"<@&{RAID_ROLE_ID}>"
-            allowed_mentions = {"roles": [RAID_ROLE_ID]}
+        content = f"<@&{MEMBERS_ROLE_ID}>"
+        allowed_mentions = {"roles": [MEMBERS_ROLE_ID]}
         requests.post(
             target_wh,
             json={
@@ -841,27 +837,32 @@ def wb_build_embed(event):
     unix_ts = wb_spawn_unix(event)
     return {
         "title": "Bossing Alert",
-        "description": f"**{boss['name']}**\nLevel {boss['level']}\nLocation: {boss['location']}\n\nSpawns: <t:{unix_ts}:R>",
+        "description": f"**{boss['name']}**\nLevel {boss['level']}\n\nSpawns: <t:{unix_ts}:R>",
         "color": 0x72AEED,
         "image": {"url": boss["image_url"]},
         "footer": {"text": "SleepingForest \u2022 DegenIdle"},
         "timestamp": wb_normalize_dt(event["scheduled_time"]).astimezone(timezone.utc).isoformat(),
     }
 
-# ── Raid boss alert embed ──────────────────────────────────────────────────────────────────────────
-def wb_build_raid_embed(event):
+# ── Raid boss alert (compact, thumbnail layout) ───────────────────────────────────────────────────
+def wb_build_raid_embed(event, test_mode=False):
     boss = event["boss"]
     unix_ts = wb_spawn_unix(event)
+    title = "Raid Boss Alert" + (" - TEST" if test_mode else "")
+    description = (
+        f"**{boss['name']} (Level {boss['level']})**\n"
+        f"*Spawns in 10 mins. Get ready to fight!*\n\n"
+        f"\u2022 **Cancel** active combat.\n"
+        f"\u2022 **Heal** up fully.\n"
+        f"\u2022 **Queue** for the raid."
+    )
+    if not test_mode:
+        description += f"\n\nSpawns: <t:{unix_ts}:R>"
     return {
-        "title": "\u2694\ufe0f Raid Boss Alert",
-        "description": (
-            f"**{boss['name']}** Lv.{boss['level']}\n"
-            f"Location: {boss['location']}\n\n"
-            f"Spawns: <t:{unix_ts}:R>\n\n"
-            f"Get ready to fight!"
-        ),
+        "title": title,
+        "description": description,
         "color": 0xE74C3C,
-        "image": {"url": boss["image_url"]},
+        "thumbnail": {"url": boss["image_url"]},
         "footer": {"text": "SleepingForest \u2022 Raids"},
         "timestamp": wb_normalize_dt(event["scheduled_time"]).astimezone(timezone.utc).isoformat(),
     }
@@ -931,22 +932,17 @@ def run_worldboss_check():
         ).raise_for_status()
         print(f"[WB] Alert sent for {best_event['boss']['name']} Lv.{boss_level}")
 
-        # Raid channel ping (always, with raid role)
+        # Raid channel ping (members role, compact thumbnail alert)
         raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
         if raid_wh:
-            raid_content = ""
-            raid_allowed = {"parse": []}
-            if RAID_ROLE_ID:
-                raid_content = f"<@&{RAID_ROLE_ID}>"
-                raid_allowed = {"roles": [RAID_ROLE_ID]}
             try:
                 requests.post(
                     raid_wh,
                     json={
-                        "username": "SleepingForest Raids",
-                        "content": raid_content,
+                        "username": "SleepingForest Raid",
+                        "content": f"<@&{MEMBERS_ROLE_ID}>",
                         "embeds": [wb_build_raid_embed(best_event)],
-                        "allowed_mentions": raid_allowed,
+                        "allowed_mentions": {"roles": [MEMBERS_ROLE_ID]},
                     },
                     timeout=20,
                 ).raise_for_status()
@@ -1099,6 +1095,42 @@ async def on_message(message):
         except Exception as e:
             await message.channel.send(f"Error: {e}")
 
+    elif content.lower() == "!testraidalert":
+        if not is_owner and not is_admin: return
+        try:
+            def _post_test_raid_alert():
+                target_wh = LOGS_WEBHOOK_URL
+                if not target_wh:
+                    return "No DISCORD_LOGS_WEBHOOK set."
+                now_unix = int(datetime.now(timezone.utc).timestamp())
+                fake_event = {
+                    "boss": {
+                        "name": "Rimegard",
+                        "level": 10,
+                        "image_url": "https://api-v1.degenidle.com/assets/bosses/rimegard.png",
+                    },
+                    "scheduled_time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                }
+                embed = wb_build_raid_embed(fake_event, test_mode=True)
+                requests.post(
+                    target_wh,
+                    json={
+                        "username": "SleepingForest Raid",
+                        "content": "(TEST - no members pinged)",
+                        "embeds": [embed],
+                        "allowed_mentions": {"parse": []},
+                    },
+                    timeout=15,
+                ).raise_for_status()
+                return "ok"
+            result = await asyncio.get_running_loop().run_in_executor(None, _post_test_raid_alert)
+            if result == "ok":
+                await message.channel.send("Raid alert test fired - check logs channel.")
+            else:
+                await message.channel.send(f"Test failed: {result}")
+        except Exception as e:
+            await message.channel.send(f"Error: {e}")
+
     elif content.lower().startswith("!settoken "):
         if not is_owner and not is_admin: return
         new_token = content[10:].strip()
@@ -1182,7 +1214,7 @@ async def on_message(message):
         if is_officer or is_admin or is_owner:
             embed.add_field(name="\U0001f33f Officers", value="`!bossstats`\nPost the latest raid boss report to raid channel\n\n`!previousboss`\nPost the previous raid boss report to raid channel", inline=False)
         if is_admin or is_owner:
-            embed.add_field(name="\u2728 Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck live token expiry and rotation status", inline=False)
+            embed.add_field(name="\u2728 Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!testraidalert`\nTest raid alert (posts to logs, no ping)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck live token expiry and rotation status", inline=False)
         embed.set_footer(text="Role-aware command list")
         await message.channel.send(embed=embed)
 
