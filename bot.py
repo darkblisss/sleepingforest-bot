@@ -24,8 +24,9 @@ MEMBERS_FILE    = "members.json"
 SNAPSHOT_FILE   = "snapshots.json"
 WB_STATE_FILE   = "worldboss_state.json"
 WB_SCHEDULE_URL = "https://api-v1.degenidle.com/api/worldboss/schedule?limit=5"
-WB_SEND_MINUTES_BEFORE = 5
+WB_SEND_MINUTES_BEFORE = 10
 WB_LOOKAHEAD_MINUTES   = 20
+WB_BOSS_LEVEL_MAX      = 50
 MAX_DONATIONS_PER_DAY  = 25
 SKILLS = [
     "mining", "woodcutting", "tracking", "fishing", "gathering",
@@ -847,6 +848,24 @@ def wb_build_embed(event):
         "timestamp": wb_normalize_dt(event["scheduled_time"]).astimezone(timezone.utc).isoformat(),
     }
 
+# ── Raid boss alert embed ──────────────────────────────────────────────────────────────────────────
+def wb_build_raid_embed(event):
+    boss = event["boss"]
+    unix_ts = wb_spawn_unix(event)
+    return {
+        "title": "\u2694\ufe0f Raid Boss Alert",
+        "description": (
+            f"**{boss['name']}** Lv.{boss['level']}\n"
+            f"Location: {boss['location']}\n\n"
+            f"Spawns: <t:{unix_ts}:R>\n\n"
+            f"Get ready to fight!"
+        ),
+        "color": 0xE74C3C,
+        "image": {"url": boss["image_url"]},
+        "footer": {"text": "SleepingForest \u2022 Raids"},
+        "timestamp": wb_normalize_dt(event["scheduled_time"]).astimezone(timezone.utc).isoformat(),
+    }
+
 def run_worldboss_check():
     if not WB_WEBHOOK_URL:
         print("[WB] No DISCORD_WB_WEBHOOK set - skipping")
@@ -892,15 +911,56 @@ def run_worldboss_check():
     wait_secs = best_secs - WB_SEND_MINUTES_BEFORE * 60
     if wait_secs > 0:
         time.sleep(wait_secs)
+    boss_level = best_event["boss"].get("level", 0)
     if wb_seconds_until(best_event) > 0:
-        content = ""
-        allowed_mentions = {"parse": []}
-        if WB_ROLE_ID and best_event["boss"]["level"] <= 50:
-            content = f"<@&{WB_ROLE_ID}>"
-            allowed_mentions = {"roles": [WB_ROLE_ID]}
-        requests.post(WB_WEBHOOK_URL, json={"username": "SleepingForest Watch", "content": content, "embeds": [wb_build_embed(best_event)], "allowed_mentions": allowed_mentions}, timeout=20).raise_for_status()
+        # World boss ping (public channel, level <= 50 only)
+        wb_content = ""
+        wb_allowed = {"parse": []}
+        if WB_ROLE_ID and boss_level <= WB_BOSS_LEVEL_MAX:
+            wb_content = f"<@&{WB_ROLE_ID}>"
+            wb_allowed = {"roles": [WB_ROLE_ID]}
+        requests.post(
+            WB_WEBHOOK_URL,
+            json={
+                "username": "SleepingForest Watch",
+                "content": wb_content,
+                "embeds": [wb_build_embed(best_event)],
+                "allowed_mentions": wb_allowed,
+            },
+            timeout=20,
+        ).raise_for_status()
+        print(f"[WB] Alert sent for {best_event['boss']['name']} Lv.{boss_level}")
+
+        # Raid channel ping (always, with raid role)
+        raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
+        if raid_wh:
+            raid_content = ""
+            raid_allowed = {"parse": []}
+            if RAID_ROLE_ID:
+                raid_content = f"<@&{RAID_ROLE_ID}>"
+                raid_allowed = {"roles": [RAID_ROLE_ID]}
+            try:
+                requests.post(
+                    raid_wh,
+                    json={
+                        "username": "SleepingForest Raids",
+                        "content": raid_content,
+                        "embeds": [wb_build_raid_embed(best_event)],
+                        "allowed_mentions": raid_allowed,
+                    },
+                    timeout=20,
+                ).raise_for_status()
+                print(f"[WB] Raid alert sent for {best_event['boss']['name']} Lv.{boss_level}")
+            except Exception as e:
+                print(f"[WB] Raid alert failed: {e}")
+
+        # Post previous raid stats after spawn time passes
+        secs_to_spawn = wb_seconds_until(best_event)
+        if secs_to_spawn > 0:
+            time.sleep(secs_to_spawn + 30)
+        _post_raid_boss_stats_after_spawn()
+
         sent.add(spawn_key)
-        print(f"[WB] Alert sent for {best_event['boss']['name']}")
     state["sent"] = list(sent)[-200:]
     wb_save_state(state)
 
@@ -1141,21 +1201,18 @@ async def on_member_update(before, after):
         matched_key = next((k for k, v in members_data.items() if v == user_id), None)
         if matched_key:
             await asyncio.get_running_loop().run_in_executor(None, do_self_unlink, user_id)
-            await send_log(f"Auto-unlinked (role removed): <@{user_id}> -> **{matched_key}**")
+            await send_log(f"Auto-unlinked **{matched_key}** (Members role removed from <@{user_id}>)")
 
 @bot.event
 async def on_ready():
-    print(f"[BOT] Logged in as {bot.user} - online")
-    expiry = os.environ.get("TOKEN_EXPIRES_UNIX", "")
-    if expiry:
-        print(f"[TOKEN] Loaded expiry from env: {expiry}")
-    if not weekly_giveaway.is_running():
-        weekly_giveaway.start()
+    print(f"[Bot] Logged in as {bot.user}")
     if not donations_loop.is_running():
         donations_loop.start()
-    if not worldboss_loop.is_running():
-        worldboss_loop.start()
+    if not weekly_giveaway.is_running():
+        weekly_giveaway.start()
     if not activity_check_loop.is_running():
         activity_check_loop.start()
+    if not worldboss_loop.is_running():
+        worldboss_loop.start()
 
 bot.run(BOT_TOKEN)
