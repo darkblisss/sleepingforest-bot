@@ -629,21 +629,31 @@ def build_boss_embed(raid, lb, members=None):
         f = int(pct / 100 * w)
         return chr(9608)*f + chr(9617)*(w-f)
 
-    status_line = "\u2705 **Boss Defeated**" if defeated else "\u274c **Boss Survived**"
+    status_line = "**Boss Defeated**" if defeated else "**Boss Survived**"
     hp_val = f"`[{bar(hp_remaining_pct)}]` **{round(hp_remaining_pct,1)}% HP remaining**\n{fmt(boss['max_hp'] - total)} HP left"
 
     if not entries:
         part_val = "Nobody joined this raid."
     else:
+        # Determine which players died (0 HP or hp_remaining <= 0 means survived;
+        # character_hp_remaining == 0 means died in the raid)
         lines = []
         for i, e in enumerate(entries):
             dps = e["damage_dealt"] / secs if secs else 0
-            medal = ["\U0001f947", "\U0001f948", "\U0001f949"][i] if i < 3 else f"#{i+1}"
-            lines.append(f"{medal} **{e['character_name']}** \u2014 {fmt(e['damage_dealt'])} dmg ({round(e['percentage'],1)}%) \u00b7 {fmt(dps)}/s")
+            rank = f"**#1**" if i == 0 else (f"**#2**" if i == 1 else (f"**#3**" if i == 2 else f"#{i+1}"))
+            name = e["character_name"]
+            died = e.get("character_hp_remaining") is not None and float(e.get("character_hp_remaining", 1)) <= 0
+            if died:
+                name_fmt = f"~~{name}~~"
+            elif i < 3:
+                name_fmt = f"**{name}**"
+            else:
+                name_fmt = name
+            lines.append(f"{rank} {name_fmt} -- {fmt(e['damage_dealt'])} dmg ({round(e['percentage'],1)}%) -- {fmt(dps)}/s")
         part_val = "\n".join(lines)
 
     return {
-        "title": f"{boss['name']} Lv.{boss['level']} \u2014 Raid Report",
+        "title": f"{boss['name']} Lv.{boss['level']} -- Raid Report",
         "description": status_line,
         "color": 0x2ECC71 if defeated else 0xB43232,
         "fields": [
@@ -1203,12 +1213,12 @@ async def on_message(message):
             if not raid:
                 await message.channel.send("No raid history found.")
                 return
-            target_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
+            target_wh = LOGS_WEBHOOK_URL
             if not target_wh:
-                await message.channel.send("No RAID_WEBHOOK_URL or DISCORD_LOGS_WEBHOOK is set.")
+                await message.channel.send("No DISCORD_LOGS_WEBHOOK is set.")
                 return
             requests.post(target_wh, json={"username": "SleepingForest Raids", "embeds": [build_boss_embed(raid, lb, members)], "allowed_mentions": {"parse": []}}, timeout=15).raise_for_status()
-            await message.channel.send("Boss stats posted to raid channel!")
+            await message.channel.send("Boss stats posted to logs channel.")
         except Exception as e:
             await message.channel.send(f"Error: `{e}`")
 
