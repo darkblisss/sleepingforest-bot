@@ -24,9 +24,17 @@ MEMBERS_FILE    = "members.json"
 SNAPSHOT_FILE   = "snapshots.json"
 WB_STATE_FILE   = "worldboss_state.json"
 WB_SCHEDULE_URL = "https://api-v1.degenidle.com/api/worldboss/schedule?limit=5"
-WB_SEND_MINUTES_BEFORE = 10
-WB_LOOKAHEAD_MINUTES   = 20
-WB_BOSS_LEVEL_MAX      = 50
+
+# World bosses spawn at 06:00, 14:00, 22:00 UTC - alert 5 minutes before
+WB_SEND_MINUTES_BEFORE  = 5
+WB_LOOKAHEAD_MINUTES    = 20
+WB_BOSS_LEVEL_MAX       = 50
+
+# Raid boss is manually summoned - alert 10 minutes before
+RAID_SEND_MINUTES_BEFORE = 10
+# Post raid report this many seconds after spawn (10 min after the 10 min alert = 20 min total lead time)
+RAID_REPORT_DELAY_SECS   = 600
+
 MAX_DONATIONS_PER_DAY  = 25
 SKILLS = [
     "mining", "woodcutting", "tracking", "fishing", "gathering",
@@ -58,6 +66,7 @@ RENDER_SERVICE_ID     = os.environ.get("RENDER_SERVICE_ID", "").strip()
 WB_ROLE_ID            = os.environ.get("WORLD_BOSS_ROLE_ID", "").strip()
 RELOAD_TOKEN_SECRET   = os.environ.get("RELOAD_TOKEN_SECRET", "").strip()
 RAID_WEBHOOK_URL      = os.environ.get("RAID_WEBHOOK_URL", "").strip()
+RAID_ROLE_ID          = os.environ.get("RAID_ROLE_ID", "").strip()
 
 DAILY_DONATIONS_URL  = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/daily?day=today&characterId={CHAR_ID}"
 WEEKLY_DONATIONS_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
@@ -620,20 +629,22 @@ def build_boss_embed(raid, lb, members=None):
         f = int(pct / 100 * w)
         return chr(9608)*f + chr(9617)*(w-f)
 
+    status_line = "\u2705 **Boss Defeated**" if defeated else "\u274c **Boss Survived**"
     hp_val = f"`[{bar(hp_remaining_pct)}]` **{round(hp_remaining_pct,1)}% HP remaining**\n{fmt(boss['max_hp'] - total)} HP left"
+
     if not entries:
         part_val = "Nobody joined this raid."
     else:
         lines = []
         for i, e in enumerate(entries):
             dps = e["damage_dealt"] / secs if secs else 0
-            rank = ["#1","#2","#3"][i] if i < 3 else f"#{i+1}"
-            lines.append(f"{rank} **{e['character_name']}**  \u00b7  {fmt(e['damage_dealt'])} DMG  \u00b7  {fmt(dps)}/s  \u00b7  {round(e['percentage'],1)}%")
+            medal = ["\U0001f947", "\U0001f948", "\U0001f949"][i] if i < 3 else f"#{i+1}"
+            lines.append(f"{medal} **{e['character_name']}** \u2014 {fmt(e['damage_dealt'])} dmg ({round(e['percentage'],1)}%) \u00b7 {fmt(dps)}/s")
         part_val = "\n".join(lines)
 
     return {
-        "title": f"{boss['name']} Lv.{boss['level']} - Raid Report",
-        "description": f"{'DEFEATED' if defeated else 'SURVIVED'} **{'BOSS DEFEATED' if defeated else 'Boss Survived'}**",
+        "title": f"{boss['name']} Lv.{boss['level']} \u2014 Raid Report",
+        "description": status_line,
         "color": 0x2ECC71 if defeated else 0xB43232,
         "fields": [
             {"name": "Date", "value": date_str, "inline": True},
@@ -647,32 +658,29 @@ def build_boss_embed(raid, lb, members=None):
 
 # ── Post raid boss stats to raid channel after spawn ──────────────────────────────────────────────
 def _post_raid_boss_stats_after_spawn():
-    """Called after a raid boss spawns. Fetches the latest raid and posts to the raid channel."""
+    """Posts the latest raid report to the raid channel. Called RAID_REPORT_DELAY_SECS after spawn."""
     target_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
     if not target_wh:
-        print("[RaidBoss] No RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL set - skipping post-spawn stats")
+        print("[Raid] No RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL set - skipping post-spawn stats")
         return
     try:
         raid, lb, members = fetch_boss_raid(0)
         if not raid:
-            print("[RaidBoss] No raid history found for post-spawn stats")
+            print("[Raid] No raid history found for post-spawn stats")
             return
-        content = f"<@&{MEMBERS_ROLE_ID}>"
-        allowed_mentions = {"roles": [MEMBERS_ROLE_ID]}
         requests.post(
             target_wh,
             json={
                 "username": "SleepingForest Raids",
-                "content": content,
                 "embeds": [build_boss_embed(raid, lb, members)],
-                "allowed_mentions": allowed_mentions,
+                "allowed_mentions": {"parse": []},
             },
             timeout=15,
         ).raise_for_status()
-        print("[RaidBoss] Post-spawn stats posted to raid channel")
+        print("[Raid] Post-spawn stats posted to raid channel")
     except Exception as e:
-        print(f"[RaidBoss] Failed to post post-spawn stats: {e}")
-        send_error_alert(f"RaidBoss post-spawn stats failed: {e}")
+        print(f"[Raid] Failed to post post-spawn stats: {e}")
+        send_error_alert(f"Raid post-spawn stats failed: {e}")
 
 # ── Activity checker ──────────────────────────────────────────────────────────────────────────────
 def parse_joined_at(s):
@@ -807,7 +815,7 @@ def run_activity_check():
 async def activity_check_loop():
     await asyncio.get_running_loop().run_in_executor(None, run_activity_check)
 
-# ── Worldboss alert loop (world boss only, separate from raid boss) ──────────────────────────────
+# ── World boss embed (ingame world bosses at 06:00, 14:00, 22:00 UTC) ────────────────────────────
 def wb_load_state():
     if not os.path.exists(WB_STATE_FILE):
         return {"sent": []}
@@ -833,6 +841,7 @@ def wb_spawn_unix(event):
     return int(wb_normalize_dt(event["scheduled_time"]).timestamp())
 
 def wb_build_embed(event):
+    """World boss embed - posted to the world boss channel."""
     boss = event["boss"]
     unix_ts = wb_spawn_unix(event)
     return {
@@ -844,14 +853,15 @@ def wb_build_embed(event):
         "timestamp": wb_normalize_dt(event["scheduled_time"]).astimezone(timezone.utc).isoformat(),
     }
 
-# ── Raid boss alert (compact, thumbnail layout) ───────────────────────────────────────────────────
-def wb_build_raid_embed(event, test_mode=False):
+# ── Raid alert embed (manually summoned raid boss, posted to raid channel) ────────────────────────
+def raid_build_alert_embed(event, test_mode=False):
+    """Raid Alert embed - 10 minutes before a manually summoned raid boss spawns."""
     boss = event["boss"]
     unix_ts = wb_spawn_unix(event)
-    title = "Raid Boss Alert" + (" - TEST" if test_mode else "")
+    title = "Raid Alert" + (" \u2014 TEST" if test_mode else "")
     description = (
         f"**{boss['name']} (Level {boss['level']})**\n"
-        f"*Spawns in 10 mins. Get ready to fight!*\n\n"
+        f"*Spawning in 10 minutes. Get ready!*\n\n"
         f"\u2022 **Cancel** active combat.\n"
         f"\u2022 **Heal** up fully.\n"
         f"\u2022 **Queue** for the raid."
@@ -909,12 +919,15 @@ def run_worldboss_check():
         state["sent"] = list(sent)[-200:]
         wb_save_state(state)
         return
+
+    # Sleep until WB_SEND_MINUTES_BEFORE before world boss spawn
     wait_secs = best_secs - WB_SEND_MINUTES_BEFORE * 60
     if wait_secs > 0:
         time.sleep(wait_secs)
+
     boss_level = best_event["boss"].get("level", 0)
     if wb_seconds_until(best_event) > 0:
-        # World boss ping (public channel, level <= 50 only)
+        # World boss alert - public channel, level <= 50 only
         wb_content = ""
         wb_allowed = {"parse": []}
         if WB_ROLE_ID and boss_level <= WB_BOSS_LEVEL_MAX:
@@ -930,30 +943,40 @@ def run_worldboss_check():
             },
             timeout=20,
         ).raise_for_status()
-        print(f"[WB] Alert sent for {best_event['boss']['name']} Lv.{boss_level}")
+        print(f"[WB] World boss alert sent for {best_event['boss']['name']} Lv.{boss_level}")
 
-        # Raid channel ping (members role, compact thumbnail alert)
+        # Raid alert - separate channel, 10 min warning for manually summoned raid boss
+        # This fires at the same checkpoint but is a separate alert for the raid channel
         raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
         if raid_wh:
             try:
+                raid_content = ""
+                raid_allowed = {"parse": []}
+                if RAID_ROLE_ID:
+                    raid_content = f"<@&{RAID_ROLE_ID}>"
+                    raid_allowed = {"roles": [RAID_ROLE_ID]}
+                elif MEMBERS_ROLE_ID:
+                    raid_content = f"<@&{MEMBERS_ROLE_ID}>"
+                    raid_allowed = {"roles": [MEMBERS_ROLE_ID]}
                 requests.post(
                     raid_wh,
                     json={
-                        "username": "SleepingForest Raid",
-                        "content": f"<@&{MEMBERS_ROLE_ID}>",
-                        "embeds": [wb_build_raid_embed(best_event)],
-                        "allowed_mentions": {"roles": [MEMBERS_ROLE_ID]},
+                        "username": "SleepingForest Raids",
+                        "content": raid_content,
+                        "embeds": [raid_build_alert_embed(best_event)],
+                        "allowed_mentions": raid_allowed,
                     },
                     timeout=20,
                 ).raise_for_status()
-                print(f"[WB] Raid alert sent for {best_event['boss']['name']} Lv.{boss_level}")
+                print(f"[Raid] Alert sent for {best_event['boss']['name']} Lv.{boss_level}")
             except Exception as e:
-                print(f"[WB] Raid alert failed: {e}")
+                print(f"[Raid] Alert failed: {e}")
 
-        # Post previous raid stats after spawn time passes
+        # Post raid report RAID_REPORT_DELAY_SECS after spawn (default 600s = 10 min after spawn)
         secs_to_spawn = wb_seconds_until(best_event)
-        if secs_to_spawn > 0:
-            time.sleep(secs_to_spawn + 30)
+        total_wait = secs_to_spawn + RAID_REPORT_DELAY_SECS
+        if total_wait > 0:
+            time.sleep(total_wait)
         _post_raid_boss_stats_after_spawn()
 
         sent.add(spawn_key)
@@ -1102,7 +1125,6 @@ async def on_message(message):
                 target_wh = LOGS_WEBHOOK_URL
                 if not target_wh:
                     return "No DISCORD_LOGS_WEBHOOK set."
-                now_unix = int(datetime.now(timezone.utc).timestamp())
                 fake_event = {
                     "boss": {
                         "name": "Rimegard",
@@ -1111,12 +1133,12 @@ async def on_message(message):
                     },
                     "scheduled_time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                 }
-                embed = wb_build_raid_embed(fake_event, test_mode=True)
+                embed = raid_build_alert_embed(fake_event, test_mode=True)
                 requests.post(
                     target_wh,
                     json={
-                        "username": "SleepingForest Raid",
-                        "content": "(TEST - no members pinged)",
+                        "username": "SleepingForest Raids",
+                        "content": "(TEST - no roles pinged)",
                         "embeds": [embed],
                         "allowed_mentions": {"parse": []},
                     },
@@ -1185,7 +1207,7 @@ async def on_message(message):
             if not target_wh:
                 await message.channel.send("No RAID_WEBHOOK_URL or DISCORD_LOGS_WEBHOOK is set.")
                 return
-            requests.post(target_wh, json={"username": "SleepingForest Raids", "embeds": [build_boss_embed(raid, lb, members)]}, timeout=15).raise_for_status()
+            requests.post(target_wh, json={"username": "SleepingForest Raids", "embeds": [build_boss_embed(raid, lb, members)], "allowed_mentions": {"parse": []}}, timeout=15).raise_for_status()
             await message.channel.send("Boss stats posted to raid channel!")
         except Exception as e:
             await message.channel.send(f"Error: `{e}`")
@@ -1203,7 +1225,7 @@ async def on_message(message):
             if not target_wh:
                 await message.channel.send("No RAID_WEBHOOK_URL or DISCORD_LOGS_WEBHOOK is set.")
                 return
-            requests.post(target_wh, json={"username": "SleepingForest Raids", "embeds": [build_boss_embed(raid, lb, members)]}, timeout=15).raise_for_status()
+            requests.post(target_wh, json={"username": "SleepingForest Raids", "embeds": [build_boss_embed(raid, lb, members)], "allowed_mentions": {"parse": []}}, timeout=15).raise_for_status()
             await message.channel.send("Previous boss stats posted to raid channel!")
         except Exception as e:
             await message.channel.send(f"Error: `{e}`")
@@ -1212,7 +1234,7 @@ async def on_message(message):
         embed = discord.Embed(title="SleepingForest Bot Commands", description="Commands available for your current roles.", color=0x958AEA)
         embed.add_field(name="\U0001f338 Members", value="`!link YourIngameName`\nLink your Discord to your in-game character\n\n`!unlink`\nUnlink your own account", inline=False)
         if is_officer or is_admin or is_owner:
-            embed.add_field(name="\U0001f33f Officers", value="`!bossstats`\nPost the latest raid boss report to raid channel\n\n`!previousboss`\nPost the previous raid boss report to raid channel", inline=False)
+            embed.add_field(name="\U0001f33f Officers", value="`!bossstats`\nPost the latest raid report to the raid channel\n\n`!previousboss`\nPost the previous raid report to the raid channel", inline=False)
         if is_admin or is_owner:
             embed.add_field(name="\u2728 Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!testraidalert`\nTest raid alert (posts to logs, no ping)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck live token expiry and rotation status", inline=False)
         embed.set_footer(text="Role-aware command list")
