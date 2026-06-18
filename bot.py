@@ -629,12 +629,13 @@ def build_boss_embed(raid, lb, members=None):
     init_name = (members or {}).get(init_id) or next((e["character_name"] for e in entries if e.get("character_id") == init_id), "Unknown")
 
     def bar(pct, width=20):
-        # filled blocks = remaining HP, so bar depletes as damage is dealt
-        filled = max(0, min(width, int(pct / 5)))
+        # Damage dealt = filled blocks (bar depletes left to right as HP drops)
+        damage_pct = 100.0 - pct
+        filled = max(0, min(width, round(damage_pct / 5)))
         empty = width - filled
         return "█" * filled + "░" * empty
 
-    def trunc(name, max_width=10):
+    def trunc(name, max_width=9):
         if len(name) <= max_width:
             return name
         return name[:max_width - 1] + "."
@@ -646,13 +647,16 @@ def build_boss_embed(raid, lb, members=None):
     if not entries:
         participants_block = "```text\nNo participants\n```"
     else:
-        header = f"{'#':<3} {'Player':<10} {'Dmg':>7} {'DPS':>4} {'%':>5}"
-        rows = [header]
+        # Compact columns: Rk(3) Player(9) Dmg(6) DPS(4) %(5)
+        header = f"{'Rk':<3} {'Player':<9} {'Dmg':>6} {'DPS':>4} {'%':>5}"
+        sep    = "-" * len(header)
+        rows = [header, sep]
         for i, e in enumerate(entries):
             dps = e["damage_dealt"] / secs if secs else 0
-            name = trunc(e["character_name"], 10)
+            name = trunc(e["character_name"], 9)
+            pct_val = round(e["percentage"], 1)
             rows.append(
-                f"#{i+1:<2} {name:<10} {fmt(e['damage_dealt']):>7} {round(dps):>4} {round(e['percentage'], 1):>4}%"
+                f"#{i+1:<2} {name:<9} {fmt(e['damage_dealt']):>6} {round(dps):>4} {pct_val:>4}%"
             )
         participants_block = "```text\n" + "\n".join(rows) + "\n```"
 
