@@ -626,7 +626,7 @@ def build_boss_embed(raid, lb, members=None):
         secs = max(1, (e - s).total_seconds())
     dur = (lambda m, sc: f"{m}m {sc}s" if m else f"{sc}s")(*divmod(int(secs), 60)) if secs else "N/A"
     dt = datetime.fromisoformat(raid["scheduled_time"].replace(" ", "T").split("+")[0] + "+00:00")
-    date_str = dt.strftime("%b %d, %Y")
+    date_str = dt.strftime("%d %b %Y")
     init_id = raid.get("initiator_character_id", "")
     init_name = (members or {}).get(init_id) or next((e["character_name"] for e in entries if e.get("character_id") == init_id), "Unknown")
 
@@ -635,32 +635,32 @@ def build_boss_embed(raid, lb, members=None):
         empty = width - filled
         return "#" * filled + "-" * empty
 
-    NB = "\u00A0"
-
-    status_line = "**Boss Defeated**" if defeated else "**Boss Survived**"
+    status_line = "Boss Defeated" if defeated else "Boss Survived"
     hp_left = max(0.0, boss["max_hp"] - total)
-    hp_val = f"`[{bar(hp_remaining_pct)}]` **{round(hp_remaining_pct, 1)}% HP remaining**\n{fmt(hp_left)} HP left"
+    hp_val = f"`[{bar(hp_remaining_pct)}]` {round(hp_remaining_pct, 1)}% HP remaining\n{fmt(hp_left)} HP left"
 
     if not entries:
-        participants_block = "```\nNo participants\n```"
+        participants_block = "No participants"
     else:
-        header_raw = f"{'Rank':<4} {'Player':<13} {'Damage (%)':<13} {'DPS':>5}"
-        sep_raw    = "-" * len(header_raw)
-        header = header_raw.replace(" ", NB)
-        sep    = sep_raw.replace("-", "\u2014").replace(" ", NB)
-        rows = [header, sep]
+        lines = []
         for i, e in enumerate(entries):
-            dps_val = round(e["damage_dealt"] / secs) if secs else 0
-            pct_val = round(e["percentage"], 1)
-            name    = e["character_name"]
-            dmg_pct = f"{fmt(e['damage_dealt'])} ({pct_val}%)"
-            rank    = f"#{i+1}"
-            row_raw = f"{rank:<4} {name:<13} {dmg_pct:<13} {dps_val:>5}"
-            rows.append(row_raw.replace(" ", NB))
-        participants_block = "```\n" + "\n".join(rows) + "\n```"
+            dmg = float(e.get("damage_dealt", 0) or 0)
+            dps_val = round(dmg / secs) if secs else 0
+            pct_val = round(e.get("percentage", 0), 1)
+            name = e["character_name"]
+            dmg_str = fmt(dmg)
+            rank = f"#{i + 1}"
+            line = f"{rank} {name} - {dmg_str} dmg ({pct_val}%) - {dps_val}/s"
+            # Bold top 3 survivors, strikethrough anyone with 0 damage (died)
+            if dmg == 0:
+                line = f"~~{rank} {name} - {dmg_str} dmg ({pct_val}%) - {dps_val}/s~~"
+            elif i < 3:
+                line = f"**{rank} {name} - {dmg_str} dmg ({pct_val}%) - {dps_val}/s**"
+            lines.append(line)
+        participants_block = "\n".join(lines)
 
     description = (
-        f"{status_line}\n\n"
+        f"**{status_line}**\n\n"
         f"**Date:** {date_str}\n"
         f"**Duration:** {dur}\n"
         f"**Initiated by:** {init_name}\n\n"
@@ -1032,14 +1032,12 @@ def run_guild_raid_check():
 
     spawn = data.get("data", {}).get("active_spawn")
     if not spawn:
-        # No active guild raid right now
         return
 
     spawn_id = spawn["id"]
     status = spawn.get("status", "")
     scheduled_str = spawn.get("scheduled_time", "")
 
-    # Parse spawn time
     try:
         s = scheduled_str.replace(" ", "T")
         if re.search(r"[+-]\d{2}$", s):
@@ -1053,8 +1051,7 @@ def run_guild_raid_check():
     alert_key = f"{spawn_id}:alert"
     report_key = f"{spawn_id}:report"
 
-    # Send alert if within 10-20 minutes of spawn and not already alerted
-    alert_window = RAID_SEND_MINUTES_BEFORE * 60  # 600 secs
+    alert_window = RAID_SEND_MINUTES_BEFORE * 60
     if alert_key not in alerted and 0 < secs_until_spawn <= (alert_window + 10 * 60):
         raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
         try:
@@ -1081,7 +1078,6 @@ def run_guild_raid_check():
         except Exception as e:
             print(f"[Raid] Alert post failed: {e}")
 
-    # Post raid report once the raid is done and not already reported
     if report_key not in reported and status in ("completed", "defeated", "failed", "ended"):
         try:
             raid, lb, guild_members = fetch_boss_raid(0)
