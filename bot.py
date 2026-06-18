@@ -146,7 +146,7 @@ def _post_token_log(new_token, expires_in=86400):
                     f"Expires approximately: <t:{expires_unix}:R> (<t:{expires_unix}:f>)"
                 ),
                 "color": 0x01696f,
-                "footer": {"text": "SleepingForest - Token Rotation"}
+                "footer": {"text": "SleepingForest • Token Rotation"}
             }]
         }, timeout=10)
     except Exception:
@@ -422,7 +422,7 @@ def run_donations_reminder(webhook_override=None):
         "",
     ]
     for m in not_donated:
-        lines.append(f"- {m['character_name']}")
+        lines.append(f"• {m['character_name']}")
     lines.append("")
     lines.append(f"About {hours} hours until reset, please get your donations in.")
     lines.append("**Need resources? Reach out for help!**")
@@ -440,7 +440,7 @@ def run_donations_reminder(webhook_override=None):
             "title": "Daily Donation Reminder",
             "description": "\n".join(lines),
             "color": 0x958AEA,
-            "footer": {"text": "SleepingForest - DegenIdle"},
+            "footer": {"text": "SleepingForest • DegenIdle"},
             "timestamp": datetime.now(timezone.utc).isoformat()
         }],
         "allowed_mentions": {"parse": ["users"]}
@@ -495,7 +495,7 @@ def run_giveaway_logic(test_mode=False):
     if threshold == 0:
         return "aborted: role check failed", logs
     week_ending = get_week_ending()
-    footer_text = f"Week ending {week_ending} - Daily limit: {daily_limit}"
+    footer_text = f"Week ending {week_ending} • Daily limit: {daily_limit}"
     target_webhook = LOGS_WEBHOOK_URL if test_mode else GIVEAWAY_WEBHOOK_URL
     if not eligible:
         requests.post(target_webhook, json={"username": "SleepingForest Giveaway", "embeds": [{
@@ -612,9 +612,9 @@ def build_boss_embed(raid, lb, members=None):
             return "N/A"
         n = float(n)
         if n >= 1_000_000:
-            return f"{round(n/1_000_000, 2)}M"
+            return f"{round(n/1_000_000,2)}M"
         if n >= 1_000:
-            return f"{round(n/1_000, 1)}K"
+            return f"{round(n/1_000,1)}K"
         return str(round(n))
 
     secs = None
@@ -622,67 +622,51 @@ def build_boss_embed(raid, lb, members=None):
         s = datetime.fromisoformat(raid["spawn_time"].replace(" ", "T").split("+")[0] + "+00:00")
         e = datetime.fromisoformat(raid["end_time"].replace(" ", "T").split("+")[0] + "+00:00")
         secs = max(1, (e - s).total_seconds())
-
     dur = (lambda m, sc: f"{m}m {sc}s" if m else f"{sc}s")(*divmod(int(secs), 60)) if secs else "N/A"
     dt = datetime.fromisoformat(raid["scheduled_time"].replace(" ", "T").split("+")[0] + "+00:00")
-    date_str = dt.strftime("%d %b %Y")
+    date_str = dt.strftime("%b %d, %Y")
     init_id = raid.get("initiator_character_id", "")
-    init_name = (members or {}).get(init_id) or next(
-        (e["character_name"] for e in entries if e.get("character_id") == init_id), "Unknown"
-    )
+    init_name = (members or {}).get(init_id) or next((e["character_name"] for e in entries if e.get("character_id") == init_id), "Unknown")
 
-    # HP bar using plain ASCII only
-    def hp_bar(pct, width=20):
-        damage_pct = 100.0 - pct
-        filled = max(0, min(width, round(damage_pct / (100.0 / width))))
+    def bar(pct, width=20):
+        # Remaining HP = filled blocks (bar starts full and depletes as HP drops)
+        filled = max(0, min(width, round(pct / 5)))
         empty = width - filled
-        return "[" + "#" * filled + "-" * empty + "]"
+        return "█" * filled + "░" * empty
 
-    status_line = "Boss Defeated" if defeated else "Boss Survived"
+    NB = "\u00A0"  # non-breaking space
+
+    status_line = "**Boss Defeated**" if defeated else "**Boss Survived**"
     hp_left = max(0.0, boss["max_hp"] - total)
-    hp_val = f"`{hp_bar(hp_remaining_pct)}` {round(hp_remaining_pct, 1)}% HP remaining\n{fmt(hp_left)} HP left"
+    hp_val = f"`[{bar(hp_remaining_pct)}]` **{round(hp_remaining_pct, 1)}% HP remaining**\n{fmt(hp_left)} HP left"
 
     if not entries:
         participants_block = "```\nNo participants\n```"
     else:
-        rows = []
+        # Column widths: Rank(3) Player(13) Damage+%(13) DPS(5)
+        # Use non-breaking spaces so Discord monospace stays aligned
+        header_raw = f"{'Rank':<4} {'Player':<13} {'Damage (%)':<13} {'DPS':>5}"
+        sep_raw    = "-" * len(header_raw)
+        header = header_raw.replace(" ", NB)
+        sep    = sep_raw.replace("-", "\u2014").replace(" ", NB)
+        rows = [header, sep]
         for i, e in enumerate(entries):
-            rank = i + 1
             dps_val = round(e["damage_dealt"] / secs) if secs else 0
             pct_val = round(e["percentage"], 1)
-            name = e["character_name"]
-            dmg_str = fmt(e["damage_dealt"])
-            survived = e.get("survived", True)
-            dmg_dealt = float(e.get("damage_dealt", 0))
-
-            # Format the participant line
-            rank_str = f"#{rank}"
-            stats_str = f"{dmg_str} dmg ({pct_val}%) - {dps_val}/s"
-
-            # Bold top 3, strikethrough anyone who died (survived=False) or dealt 0 damage
-            died = not survived or dmg_dealt == 0
-            if died:
-                # Strikethrough in Discord markdown
-                name_fmt = f"~~{name}~~"
-            elif rank <= 3:
-                name_fmt = f"**{name}**"
-            else:
-                name_fmt = name
-
-            rows.append(f"{rank_str} {name_fmt} - {stats_str}")
-
-        participants_block = "\n".join(rows)
+            name    = e["character_name"]
+            dmg_pct = f"{fmt(e['damage_dealt'])} ({pct_val}%)"
+            rank    = f"#{i+1}"
+            row_raw = f"{rank:<4} {name:<13} {dmg_pct:<13} {dps_val:>5}"
+            rows.append(row_raw.replace(" ", NB))
+        participants_block = "```\n" + "\n".join(rows) + "\n```"
 
     description = (
-        f"**{status_line}**\n"
-        f"\n"
-        f"**Date** {date_str}\n"
-        f"**Duration** {dur}\n"
-        f"**Initiated by** {init_name}\n"
-        f"\n"
+        f"{status_line}\n\n"
+        f"**Date:** {date_str}\n"
+        f"**Duration:** {dur}\n"
+        f"**Initiated by:** {init_name}\n\n"
         f"**Boss HP**\n"
-        f"{hp_val}\n"
-        f"\n"
+        f"{hp_val}\n\n"
         f"**Participants ({len(entries)})**\n"
         f"{participants_block}"
     )
@@ -691,12 +675,12 @@ def build_boss_embed(raid, lb, members=None):
         "title": f"{boss['name']} Lv.{boss['level']} - Raid Report",
         "description": description,
         "color": 0xE74C3C if not defeated else 0x2ECC71,
-        "footer": {"text": f"SleepingForest - {boss['name']} Lv.{boss['level']}"},
+        "footer": {"text": f"SleepingForest • {boss['name']} Lv.{boss['level']}"},
     }
 
 # ── Post raid boss stats to raid channel after spawn ──────────────────────────────────────────────
 def _post_raid_boss_stats_after_spawn():
-    """Posts the latest raid report to the raid webhook. Called RAID_REPORT_DELAY_SECS after spawn."""
+    """Posts the latest raid report to the raid channel. Called RAID_REPORT_DELAY_SECS after spawn."""
     target_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
     if not target_wh:
         print("[Raid] No RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL set - skipping post-spawn stats")
@@ -851,7 +835,7 @@ def run_activity_check():
     since = time_since(last_check_ts) if last_check_ts else "first check"
     if inactive:
         inactive_sorted = sorted(inactive, key=lambda x: (x["last_active_ts"], x["avg_donations_raw"]))
-        member_lines = [f"- {e['name']} ({format_inactive_duration(e['last_active_ts'])}) [{e['avg_donations']}]" for e in inactive_sorted]
+        member_lines = [f"• {e['name']} ({format_inactive_duration(e['last_active_ts'])}) [{e['avg_donations']}]" for e in inactive_sorted]
         requests.post(wh, json={"username": "SleepingForest Warden", "embeds": [{"title": "Inactive Guild Members", "description": f"**{len(inactive)}** member(s) had no XP gains since last check **({since} ago)**.", "color": 0xC0392B, "fields": [{"name": "Members", "value": "\n".join(member_lines), "inline": False}], "footer": {"text": "SleepingForest"}, "timestamp": now_iso}]}, timeout=10)
     else:
         requests.post(wh, json={"username": "SleepingForest Warden", "embeds": [{"title": "All Members Active", "description": f"Every guild member gained XP since the last check **({since} ago)**.", "color": 0x27AE60, "footer": {"text": "SleepingForest"}, "timestamp": now_iso}]}, timeout=10)
@@ -895,7 +879,7 @@ def wb_build_embed(event):
         "description": f"**{boss['name']}**\nLevel {boss['level']}\n\nSpawns: <t:{unix_ts}:R>",
         "color": 0x72AEED,
         "image": {"url": boss["image_url"]},
-        "footer": {"text": "SleepingForest - DegenIdle"},
+        "footer": {"text": "SleepingForest • DegenIdle"},
         "timestamp": wb_normalize_dt(event["scheduled_time"]).astimezone(timezone.utc).isoformat(),
     }
 
@@ -908,9 +892,9 @@ def raid_build_alert_embed(event, test_mode=False):
     description = (
         f"**{boss['name']} (Level {boss['level']})**\n"
         f"*Spawning in 10 minutes. Get ready!*\n\n"
-        f"- Cancel active combat.\n"
-        f"- Heal up fully.\n"
-        f"- Queue for the raid."
+        f"• **Cancel** active combat.\n"
+        f"• **Heal** up fully.\n"
+        f"• **Queue** for the raid."
     )
     if not test_mode:
         description += f"\n\nSpawns: <t:{unix_ts}:R>"
@@ -919,7 +903,7 @@ def raid_build_alert_embed(event, test_mode=False):
         "description": description,
         "color": 0xE74C3C,
         "thumbnail": {"url": boss["image_url"]},
-        "footer": {"text": "SleepingForest - Raids"},
+        "footer": {"text": "SleepingForest • Raids"},
         "timestamp": wb_normalize_dt(event["scheduled_time"]).astimezone(timezone.utc).isoformat(),
     }
 
@@ -1273,10 +1257,9 @@ async def on_message(message):
             if not raid:
                 await message.channel.send("No raid history found.")
                 return
-            # !bossstats always posts to logs channel
-            target_wh = LOGS_WEBHOOK_URL
+            target_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
             if not target_wh:
-                await message.channel.send("No DISCORD_LOGS_WEBHOOK is set.")
+                await message.channel.send("No RAID_WEBHOOK_URL or DISCORD_LOGS_WEBHOOK is set.")
                 return
             requests.post(
                 target_wh,
@@ -1287,7 +1270,7 @@ async def on_message(message):
                 },
                 timeout=15,
             ).raise_for_status()
-            await message.channel.send("Boss stats posted to logs channel.")
+            await message.channel.send("Boss stats posted.")
         except Exception as e:
             await message.channel.send(f"Error: `{e}`")
 
@@ -1313,7 +1296,7 @@ async def on_message(message):
                 },
                 timeout=15,
             ).raise_for_status()
-            await message.channel.send("Previous boss stats posted to raid channel.")
+            await message.channel.send("Previous boss stats posted.")
         except Exception as e:
             await message.channel.send(f"Error: `{e}`")
 
@@ -1321,7 +1304,7 @@ async def on_message(message):
         embed = discord.Embed(title="SleepingForest Bot Commands", description="Commands available for your current roles.", color=0x958AEA)
         embed.add_field(name="Members", value="`!link YourIngameName`\nLink your Discord to your in-game character\n\n`!unlink`\nUnlink your own account", inline=False)
         if is_officer or is_admin or is_owner:
-            embed.add_field(name="Officers", value="`!bossstats`\nPost the latest raid report to the logs channel\n\n`!previousboss`\nPost the previous raid report to the raid channel", inline=False)
+            embed.add_field(name="Officers", value="`!bossstats`\nPost the latest raid report\n\n`!previousboss`\nPost the previous raid report", inline=False)
         if is_admin or is_owner:
             embed.add_field(name="Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!testraidalert`\nTest raid alert (posts to logs, no ping)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck live token expiry and rotation status", inline=False)
         embed.set_footer(text="Role-aware command list")
