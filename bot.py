@@ -629,29 +629,30 @@ def build_boss_embed(raid, lb, members=None):
     init_name = (members or {}).get(init_id) or next((e["character_name"] for e in entries if e.get("character_id") == init_id), "Unknown")
 
     def bar(pct, width=20):
-        filled = max(0, min(width, int(round((100.0 - pct) / 100 * width))))
+        # filled blocks = remaining HP, so bar depletes as damage is dealt
+        filled = max(0, min(width, int(pct / 5)))
         empty = width - filled
         return "█" * filled + "░" * empty
 
-    def code_name(name, max_width=12):
+    def trunc(name, max_width=10):
         if len(name) <= max_width:
             return name
-        return name[:max_width - 1] + "…"
+        return name[:max_width - 1] + "."
 
     status_line = "**Boss Defeated**" if defeated else "**Boss Survived**"
     hp_left = max(0.0, boss["max_hp"] - total)
-    hp_val = f"`[{bar(hp_remaining_pct)}]` **{round(hp_remaining_pct,1)}% HP remaining**\n{fmt(hp_left)} HP left"
+    hp_val = f"`[{bar(hp_remaining_pct)}]` **{round(hp_remaining_pct, 1)}% HP remaining**\n{fmt(hp_left)} HP left"
 
     if not entries:
         participants_block = "```text\nNo participants\n```"
     else:
-        header = f"{'Rank':<5} {'Player':<12} {'Damage':>8} {'DPS':>6} {'%':>6}"
+        header = f"{'#':<3} {'Player':<10} {'Dmg':>7} {'DPS':>4} {'%':>5}"
         rows = [header]
         for i, e in enumerate(entries):
             dps = e["damage_dealt"] / secs if secs else 0
-            name = code_name(e["character_name"], 12)
+            name = trunc(e["character_name"], 10)
             rows.append(
-                f"#{i+1:<4} {name:<12} {fmt(e['damage_dealt']):>8} {round(dps):>6} {round(e['percentage'],1):>5}%"
+                f"#{i+1:<2} {name:<10} {fmt(e['damage_dealt']):>7} {round(dps):>4} {round(e['percentage'], 1):>4}%"
             )
         participants_block = "```text\n" + "\n".join(rows) + "\n```"
 
@@ -1281,11 +1282,11 @@ async def on_message(message):
 
     elif content.lower() == "!botcommands":
         embed = discord.Embed(title="SleepingForest Bot Commands", description="Commands available for your current roles.", color=0x958AEA)
-        embed.add_field(name="🌸 Members", value="`!link YourIngameName`\nLink your Discord to your in-game character\n\n`!unlink`\nUnlink your own account", inline=False)
+        embed.add_field(name="Members", value="`!link YourIngameName`\nLink your Discord to your in-game character\n\n`!unlink`\nUnlink your own account", inline=False)
         if is_officer or is_admin or is_owner:
-            embed.add_field(name="🌿 Officers", value="`!bossstats`\nPost the latest raid report to the raid channel\n\n`!previousboss`\nPost the previous raid report to the raid channel", inline=False)
+            embed.add_field(name="Officers", value="`!bossstats`\nPost the latest raid report to the logs channel\n\n`!previousboss`\nPost the previous raid report to the raid channel", inline=False)
         if is_admin or is_owner:
-            embed.add_field(name="✨ Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!testraidalert`\nTest raid alert (posts to logs, no ping)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck live token expiry and rotation status", inline=False)
+            embed.add_field(name="Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!testraidalert`\nTest raid alert (posts to logs, no ping)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck live token expiry and rotation status", inline=False)
         embed.set_footer(text="Role-aware command list")
         await message.channel.send(embed=embed)
 
