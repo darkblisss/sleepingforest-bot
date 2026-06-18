@@ -146,7 +146,7 @@ def _post_token_log(new_token, expires_in=86400):
                     f"Expires approximately: <t:{expires_unix}:R> (<t:{expires_unix}:f>)"
                 ),
                 "color": 0x01696f,
-                "footer": {"text": "SleepingForest \u2022 Token Rotation"}
+                "footer": {"text": "SleepingForest • Token Rotation"}
             }]
         }, timeout=10)
     except Exception:
@@ -422,7 +422,7 @@ def run_donations_reminder(webhook_override=None):
         "",
     ]
     for m in not_donated:
-        lines.append(f"\u2022 {m['character_name']}")
+        lines.append(f"• {m['character_name']}")
     lines.append("")
     lines.append(f"About {hours} hours until reset, please get your donations in.")
     lines.append("**Need resources? Reach out for help!**")
@@ -440,7 +440,7 @@ def run_donations_reminder(webhook_override=None):
             "title": "Daily Donation Reminder",
             "description": "\n".join(lines),
             "color": 0x958AEA,
-            "footer": {"text": "SleepingForest \u2022 DegenIdle"},
+            "footer": {"text": "SleepingForest • DegenIdle"},
             "timestamp": datetime.now(timezone.utc).isoformat()
         }],
         "allowed_mentions": {"parse": ["users"]}
@@ -495,7 +495,7 @@ def run_giveaway_logic(test_mode=False):
     if threshold == 0:
         return "aborted: role check failed", logs
     week_ending = get_week_ending()
-    footer_text = f"Week ending {week_ending} \u2022 Daily limit: {daily_limit}"
+    footer_text = f"Week ending {week_ending} • Daily limit: {daily_limit}"
     target_webhook = LOGS_WEBHOOK_URL if test_mode else GIVEAWAY_WEBHOOK_URL
     if not eligible:
         requests.post(target_webhook, json={"username": "SleepingForest Giveaway", "embeds": [{
@@ -600,18 +600,21 @@ def fetch_boss_raid(offset=0):
         members = {}
     return raid, lb, members
 
-def build_boss_message(raid, lb, members=None):
-    """Returns a plain Discord message string: bold title line then monospace code block table."""
+def build_boss_embed(raid, lb, members=None):
     boss = raid["boss"]
     entries = lb.get("data", [])
     total = float(raid["total_damage_dealt"]) if raid["total_damage_dealt"] else 0.0
+    hp_remaining_pct = max(0.0, 100.0 - (total / boss["max_hp"] * 100 if boss["max_hp"] else 0.0))
     defeated = raid["boss_defeated"]
 
     def fmt(n):
-        if n is None: return "N/A"
+        if n is None:
+            return "N/A"
         n = float(n)
-        if n >= 1_000_000: return f"{round(n/1_000_000,2)}M"
-        if n >= 1_000: return f"{round(n/1_000,1)}K"
+        if n >= 1_000_000:
+            return f"{round(n/1_000_000,2)}M"
+        if n >= 1_000:
+            return f"{round(n/1_000,1)}K"
         return str(round(n))
 
     secs = None
@@ -625,37 +628,50 @@ def build_boss_message(raid, lb, members=None):
     init_id = raid.get("initiator_character_id", "")
     init_name = (members or {}).get(init_id) or next((e["character_name"] for e in entries if e.get("character_id") == init_id), "Unknown")
 
-    status_str = "Boss Defeated" if defeated else "Boss Survived"
-    total_dmg = fmt(total)
+    def bar(pct, width=20):
+        filled = max(0, min(width, int(round((100.0 - pct) / 100 * width))))
+        empty = width - filled
+        return "█" * filled + "░" * empty
 
-    sep = "-" * 70
+    def code_name(name, max_width=12):
+        if len(name) <= max_width:
+            return name
+        return name[:max_width - 1] + "…"
 
-    inner_lines = [
-        f"Date: {date_str}",
-        f"Duration: {dur}",
-        status_str,
-        f"Total Damage: {total_dmg}",
-        f"Initiated by: {init_name}",
-        "",
-        sep,
-        f"{'Rank':<6}| {'Player':<20}| {'Damage':>12} | {'DPS':>8} | {'%':>7} |",
-        sep,
-    ]
+    status_line = "**Boss Defeated**" if defeated else "**Boss Survived**"
+    hp_left = max(0.0, boss["max_hp"] - total)
+    hp_val = f"`[{bar(hp_remaining_pct)}]` **{round(hp_remaining_pct,1)}% HP remaining**\n{fmt(hp_left)} HP left"
 
-    for i, e in enumerate(entries):
-        dps = e["damage_dealt"] / secs if secs else 0
-        rank_str = f"#{i+1}"
-        name = e["character_name"]
-        died = e.get("character_hp_remaining") is not None and float(e.get("character_hp_remaining", 1)) <= 0
-        # Inside code block strikethrough doesn't render; mark dead with a dagger symbol instead
-        display_name = f"{name} †" if died else name
-        inner_lines.append(f"{rank_str:<6}| {display_name:<20}| {fmt(e['damage_dealt']):>12} | {round(dps):>8} | {round(e['percentage'],1):>6}% |")
+    if not entries:
+        participants_block = "```text\nNo participants\n```"
+    else:
+        header = f"{'Rank':<5} {'Player':<12} {'Damage':>8} {'DPS':>6} {'%':>6}"
+        rows = [header]
+        for i, e in enumerate(entries):
+            dps = e["damage_dealt"] / secs if secs else 0
+            name = code_name(e["character_name"], 12)
+            rows.append(
+                f"#{i+1:<4} {name:<12} {fmt(e['damage_dealt']):>8} {round(dps):>6} {round(e['percentage'],1):>5}%"
+            )
+        participants_block = "```text\n" + "\n".join(rows) + "\n```"
 
-    inner_lines.append(sep)
+    description = (
+        f"{status_line}\n\n"
+        f"**Date:** {date_str}\n"
+        f"**Duration:** {dur}\n"
+        f"**Initiated by:** {init_name}\n\n"
+        f"**Boss HP**\n"
+        f"{hp_val}\n\n"
+        f"**Participants ({len(entries)})**\n"
+        f"{participants_block}"
+    )
 
-    title_line = f"**{boss['name']} Lv.{boss['level']} - Raid Report**"
-    code_block = "```\n" + "\n".join(inner_lines) + "\n```"
-    return f"{title_line}\n{code_block}"
+    return {
+        "title": f"{boss['name']} Lv.{boss['level']} - Raid Report",
+        "description": description,
+        "color": 0xE74C3C if not defeated else 0x2ECC71,
+        "footer": {"text": f"SleepingForest • {boss['name']} Lv.{boss['level']}"},
+    }
 
 # ── Post raid boss stats to raid channel after spawn ──────────────────────────────────────────────
 def _post_raid_boss_stats_after_spawn():
@@ -673,7 +689,7 @@ def _post_raid_boss_stats_after_spawn():
             target_wh,
             json={
                 "username": "SleepingForest Raids",
-                "content": build_boss_message(raid, lb, members),
+                "embeds": [build_boss_embed(raid, lb, members)],
                 "allowed_mentions": {"parse": []},
             },
             timeout=15,
@@ -687,7 +703,8 @@ def _post_raid_boss_stats_after_spawn():
 def parse_joined_at(s):
     try:
         s = s.replace(" ", "T")
-        if s.endswith("+00"): s += ":00"
+        if s.endswith("+00"):
+            s += ":00"
         return datetime.fromisoformat(s)
     except Exception:
         return None
@@ -696,7 +713,8 @@ def format_avg_daily_donations(weekly_count, joined_at_str, daily_limit=None):
     cap = daily_limit or MAX_DONATIONS_PER_DAY
     try:
         joined = parse_joined_at(joined_at_str)
-        if not joined: return "?"
+        if not joined:
+            return "?"
         days = min((datetime.now(timezone.utc).date() - joined.date()).days + 1, 7)
         capped = min(weekly_count, days * cap)
         avg = capped / days
@@ -732,8 +750,10 @@ def format_inactive_duration(iso_str):
         h, m = divmod(int(delta.total_seconds()), 3600)
         m = m // 60
         d = h // 24
-        if h >= 240: return f"{d}d"
-        if h >= 1: return f"{h}h {m}m"
+        if h >= 240:
+            return f"{d}d"
+        if h >= 1:
+            return f"{h}h {m}m"
         return f"{m}m"
     except Exception:
         return "unknown"
@@ -771,7 +791,8 @@ def run_activity_check():
         name = member["name"]
         skills = get_character_skills(name, headers)
         if skills is None:
-            if name in snapshots: new_snapshots[name] = snapshots[name]
+            if name in snapshots:
+                new_snapshots[name] = snapshots[name]
             continue
         prev = snapshots.get(name, {})
         prev_skills = prev.get("skills", {})
@@ -779,8 +800,10 @@ def run_activity_check():
         prev_last_active = prev.get("last_active_ts", now_iso)
         weekly_count = donation_counts.get(name, 0)
         avg_str = format_avg_daily_donations(weekly_count, member["joined_at"], daily_limit)
-        try: avg_raw = float(avg_str)
-        except Exception: avg_raw = 0.0
+        try:
+            avg_raw = float(avg_str)
+        except Exception:
+            avg_raw = 0.0
         if prev_skills:
             gained = any(skills.get(s, 0) > prev_skills.get(s, 0) for s in SKILLS)
             if gained:
@@ -807,7 +830,7 @@ def run_activity_check():
     since = time_since(last_check_ts) if last_check_ts else "first check"
     if inactive:
         inactive_sorted = sorted(inactive, key=lambda x: (x["last_active_ts"], x["avg_donations_raw"]))
-        member_lines = [f"\u2022 {e['name']} ({format_inactive_duration(e['last_active_ts'])}) [{e['avg_donations']}]" for e in inactive_sorted]
+        member_lines = [f"• {e['name']} ({format_inactive_duration(e['last_active_ts'])}) [{e['avg_donations']}]" for e in inactive_sorted]
         requests.post(wh, json={"username": "SleepingForest Warden", "embeds": [{"title": "Inactive Guild Members", "description": f"**{len(inactive)}** member(s) had no XP gains since last check **({since} ago)**.", "color": 0xC0392B, "fields": [{"name": "Members", "value": "\n".join(member_lines), "inline": False}], "footer": {"text": "SleepingForest"}, "timestamp": now_iso}]}, timeout=10)
     else:
         requests.post(wh, json={"username": "SleepingForest Warden", "embeds": [{"title": "All Members Active", "description": f"Every guild member gained XP since the last check **({since} ago)**.", "color": 0x27AE60, "footer": {"text": "SleepingForest"}, "timestamp": now_iso}]}, timeout=10)
@@ -832,7 +855,8 @@ def wb_save_state(state):
 
 def wb_normalize_dt(dt_str):
     s = dt_str.replace(" ", "T")
-    if re.search(r"[+-]\d{2}$", s): s += ":00"
+    if re.search(r"[+-]\d{2}$", s):
+        s += ":00"
     return datetime.fromisoformat(s)
 
 def wb_seconds_until(event):
@@ -850,7 +874,7 @@ def wb_build_embed(event):
         "description": f"**{boss['name']}**\nLevel {boss['level']}\n\nSpawns: <t:{unix_ts}:R>",
         "color": 0x72AEED,
         "image": {"url": boss["image_url"]},
-        "footer": {"text": "SleepingForest \u2022 DegenIdle"},
+        "footer": {"text": "SleepingForest • DegenIdle"},
         "timestamp": wb_normalize_dt(event["scheduled_time"]).astimezone(timezone.utc).isoformat(),
     }
 
@@ -859,13 +883,13 @@ def raid_build_alert_embed(event, test_mode=False):
     """Raid Alert embed - 10 minutes before a manually summoned raid boss spawns."""
     boss = event["boss"]
     unix_ts = wb_spawn_unix(event)
-    title = "Raid Alert" + (" \u2014 TEST" if test_mode else "")
+    title = "Raid Alert" + (" - TEST" if test_mode else "")
     description = (
         f"**{boss['name']} (Level {boss['level']})**\n"
         f"*Spawning in 10 minutes. Get ready!*\n\n"
-        f"\u2022 **Cancel** active combat.\n"
-        f"\u2022 **Heal** up fully.\n"
-        f"\u2022 **Queue** for the raid."
+        f"• **Cancel** active combat.\n"
+        f"• **Heal** up fully.\n"
+        f"• **Queue** for the raid."
     )
     if not test_mode:
         description += f"\n\nSpawns: <t:{unix_ts}:R>"
@@ -874,7 +898,7 @@ def raid_build_alert_embed(event, test_mode=False):
         "description": description,
         "color": 0xE74C3C,
         "thumbnail": {"url": boss["image_url"]},
-        "footer": {"text": "SleepingForest \u2022 Raids"},
+        "footer": {"text": "SleepingForest • Raids"},
         "timestamp": wb_normalize_dt(event["scheduled_time"]).astimezone(timezone.utc).isoformat(),
     }
 
@@ -907,7 +931,8 @@ def run_worldboss_check():
     best_event, best_secs = None, None
     for event in events:
         secs = wb_seconds_until(event)
-        if secs <= 0: continue
+        if secs <= 0:
+            continue
         if secs <= WB_LOOKAHEAD_MINUTES * 60:
             if best_secs is None or secs < best_secs:
                 best_event, best_secs = event, secs
@@ -921,14 +946,12 @@ def run_worldboss_check():
         wb_save_state(state)
         return
 
-    # Sleep until WB_SEND_MINUTES_BEFORE before world boss spawn
     wait_secs = best_secs - WB_SEND_MINUTES_BEFORE * 60
     if wait_secs > 0:
         time.sleep(wait_secs)
 
     boss_level = best_event["boss"].get("level", 0)
     if wb_seconds_until(best_event) > 0:
-        # World boss alert - public channel, level <= 50 only
         wb_content = ""
         wb_allowed = {"parse": []}
         if WB_ROLE_ID and boss_level <= WB_BOSS_LEVEL_MAX:
@@ -946,8 +969,6 @@ def run_worldboss_check():
         ).raise_for_status()
         print(f"[WB] World boss alert sent for {best_event['boss']['name']} Lv.{boss_level}")
 
-        # Raid alert - separate channel, 10 min warning for manually summoned raid boss
-        # This fires at the same checkpoint but is a separate alert for the raid channel
         raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
         if raid_wh:
             try:
@@ -973,7 +994,6 @@ def run_worldboss_check():
             except Exception as e:
                 print(f"[Raid] Alert failed: {e}")
 
-        # Post raid report RAID_REPORT_DELAY_SECS after spawn (default 600s = 10 min after spawn)
         secs_to_spawn = wb_seconds_until(best_event)
         total_wait = secs_to_spawn + RAID_REPORT_DELAY_SECS
         if total_wait > 0:
@@ -1009,7 +1029,6 @@ async def on_message(message):
     guild_obj = bot.get_guild(int(DISCORD_GUILD_ID)) if DISCORD_GUILD_ID else None
     acting_member = guild_obj.get_member(int(author_id)) if guild_obj else None
 
-    # !link
     if content.lower().startswith("!link "):
         args = content[6:].strip()
         _lparts = args.rsplit(None, 1)
@@ -1026,32 +1045,41 @@ async def on_message(message):
             if m:
                 target_id, ingame_name = m.group(1), m.group(2).strip()
             else:
-                try: await message.author.send("Usage: `!link @user IngameName`")
-                except Exception: pass
+                try:
+                    await message.author.send("Usage: `!link @user IngameName`")
+                except Exception:
+                    pass
                 return
         else:
             if not is_owner and (not acting_member or not has_members_role(acting_member)):
                 if is_dm:
-                    try: await message.author.send("You need the Members role to link your account.")
-                    except Exception: pass
+                    try:
+                        await message.author.send("You need the Members role to link your account.")
+                    except Exception:
+                        pass
                 return
         if not ingame_name:
-            try: await message.author.send("Usage: `!link YourIngameName`")
-            except Exception: pass
+            try:
+                await message.author.send("Usage: `!link YourIngameName`")
+            except Exception:
+                pass
             return
         try:
             result = await asyncio.get_running_loop().run_in_executor(None, do_link, target_id, ingame_name)
             confirm = result if target_id != author_id else result
-            try: await message.author.send(confirm)
+            try:
+                await message.author.send(confirm)
             except Exception:
-                if not is_dm: await message.channel.send(f"<@{target_id}> {confirm}")
+                if not is_dm:
+                    await message.channel.send(f"<@{target_id}> {confirm}")
             await send_log(f"Linked: <@{target_id}> -> **{ingame_name}**")
         except Exception as e:
-            try: await message.author.send(f"Something went wrong: {e}")
-            except Exception: pass
+            try:
+                await message.author.send(f"Something went wrong: {e}")
+            except Exception:
+                pass
         return
 
-    # !unlink
     if content.lower() == "!unlink" or content.lower().startswith("!unlink "):
         is_admin = acting_member and has_admin_role(acting_member)
         parts = content.split(None, 1)
@@ -1059,13 +1087,17 @@ async def on_message(message):
         if force_name and (is_owner or is_admin):
             try:
                 result = await asyncio.get_running_loop().run_in_executor(None, do_force_unlink, force_name)
-                try: await message.author.send(result)
+                try:
+                    await message.author.send(result)
                 except Exception:
-                    if not is_dm: await message.channel.send(result)
+                    if not is_dm:
+                        await message.channel.send(result)
                 await send_log(f"Force-unlinked: **{force_name}**")
             except Exception as e:
-                try: await message.author.send(f"Something went wrong: {e}")
-                except Exception: pass
+                try:
+                    await message.author.send(f"Something went wrong: {e}")
+                except Exception:
+                    pass
         elif not force_name:
             if not is_owner and (not acting_member or not has_members_role(acting_member)):
                 return
@@ -1073,30 +1105,37 @@ async def on_message(message):
             charname = next((k for k, v in members_data.items() if v == author_id), "your character")
             try:
                 result = await asyncio.get_running_loop().run_in_executor(None, do_self_unlink, author_id)
-                try: await message.author.send(result)
+                try:
+                    await message.author.send(result)
                 except Exception:
-                    if not is_dm: await message.channel.send(f"{message.author.mention} {result}")
+                    if not is_dm:
+                        await message.channel.send(f"{message.author.mention} {result}")
                 await send_log(f"Unlinked: <@{author_id}> -> **{charname}**")
             except Exception as e:
-                try: await message.author.send(f"Something went wrong: {e}")
-                except Exception: pass
+                try:
+                    await message.author.send(f"Something went wrong: {e}")
+                except Exception:
+                    pass
         return
 
-    # admin/owner gate for remaining commands
     is_admin = acting_member and has_admin_role(acting_member)
     is_officer = acting_member and has_officer_role(acting_member)
 
     if content.lower() == "!members":
-        if not is_owner and not is_admin: return
+        if not is_owner and not is_admin:
+            return
         try:
             result = await asyncio.get_running_loop().run_in_executor(None, do_members_list)
-            try: await message.author.send(result)
-            except Exception: await message.channel.send(result)
+            try:
+                await message.author.send(result)
+            except Exception:
+                await message.channel.send(result)
         except Exception as e:
             await message.channel.send(f"Error: {e}")
 
     elif content == "!testgiveaway":
-        if not is_owner and not is_admin: return
+        if not is_owner and not is_admin:
+            return
         try:
             result, logs = await asyncio.get_running_loop().run_in_executor(None, run_giveaway_logic, True)
             await message.channel.send(f"Test complete: {result}")
@@ -1104,7 +1143,8 @@ async def on_message(message):
             await message.channel.send(f"Error: {e}")
 
     elif content == "!testdonations":
-        if not is_owner and not is_admin: return
+        if not is_owner and not is_admin:
+            return
         try:
             await asyncio.get_running_loop().run_in_executor(None, run_donations_reminder, LOGS_WEBHOOK_URL)
             await message.channel.send("Donations reminder test fired - check logs channel.")
@@ -1112,7 +1152,8 @@ async def on_message(message):
             await message.channel.send(f"Error: {e}")
 
     elif content.lower() == "!activitycheck":
-        if not is_owner and not is_admin: return
+        if not is_owner and not is_admin:
+            return
         try:
             await asyncio.get_running_loop().run_in_executor(None, run_activity_check)
             await message.channel.send("Activity check complete - results posted.")
@@ -1120,7 +1161,8 @@ async def on_message(message):
             await message.channel.send(f"Error: {e}")
 
     elif content.lower() == "!testraidalert":
-        if not is_owner and not is_admin: return
+        if not is_owner and not is_admin:
+            return
         try:
             def _post_test_raid_alert():
                 target_wh = LOGS_WEBHOOK_URL
@@ -1155,11 +1197,14 @@ async def on_message(message):
             await message.channel.send(f"Error: {e}")
 
     elif content.lower().startswith("!settoken "):
-        if not is_owner and not is_admin: return
+        if not is_owner and not is_admin:
+            return
         new_token = content[10:].strip()
         if len(new_token) < 20:
-            try: await message.author.send("Invalid token - too short.")
-            except Exception: await message.channel.send(f"{message.author.mention} Invalid token.")
+            try:
+                await message.author.send("Invalid token - too short.")
+            except Exception:
+                await message.channel.send(f"{message.author.mention} Invalid token.")
             return
         os.environ["DEGEN_REFRESH_TOKEN"] = new_token
         try:
@@ -1174,11 +1219,14 @@ async def on_message(message):
             _save_token_to_github(rotated)
         except Exception as err:
             print(f"[SETTOKEN] Error: {err}")
-        try: await message.author.send("Token updated and propagated.")
-        except Exception: await message.channel.send(f"{message.author.mention} Token updated.")
+        try:
+            await message.author.send("Token updated and propagated.")
+        except Exception:
+            await message.channel.send(f"{message.author.mention} Token updated.")
 
     elif content.lower() == "!tokenexpiry":
-        if not is_owner and not is_admin: return
+        if not is_owner and not is_admin:
+            return
         expires_unix, rotated, endings, err = await asyncio.get_running_loop().run_in_executor(None, check_token_expiry)
         if err:
             await message.channel.send(f"Error: {err}")
@@ -1208,7 +1256,7 @@ async def on_message(message):
             if not target_wh:
                 await message.channel.send("No DISCORD_LOGS_WEBHOOK is set.")
                 return
-            requests.post(target_wh, json={"username": "SleepingForest Raids", "content": build_boss_message(raid, lb, members), "allowed_mentions": {"parse": []}}, timeout=15).raise_for_status()
+            requests.post(target_wh, json={"username": "SleepingForest Raids", "embeds": [build_boss_embed(raid, lb, members)], "allowed_mentions": {"parse": []}}, timeout=15).raise_for_status()
             await message.channel.send("Boss stats posted to logs channel.")
         except Exception as e:
             await message.channel.send(f"Error: `{e}`")
@@ -1226,18 +1274,18 @@ async def on_message(message):
             if not target_wh:
                 await message.channel.send("No RAID_WEBHOOK_URL or DISCORD_LOGS_WEBHOOK is set.")
                 return
-            requests.post(target_wh, json={"username": "SleepingForest Raids", "content": build_boss_message(raid, lb, members), "allowed_mentions": {"parse": []}}, timeout=15).raise_for_status()
+            requests.post(target_wh, json={"username": "SleepingForest Raids", "embeds": [build_boss_embed(raid, lb, members)], "allowed_mentions": {"parse": []}}, timeout=15).raise_for_status()
             await message.channel.send("Previous boss stats posted to raid channel.")
         except Exception as e:
             await message.channel.send(f"Error: `{e}`")
 
     elif content.lower() == "!botcommands":
         embed = discord.Embed(title="SleepingForest Bot Commands", description="Commands available for your current roles.", color=0x958AEA)
-        embed.add_field(name="\U0001f338 Members", value="`!link YourIngameName`\nLink your Discord to your in-game character\n\n`!unlink`\nUnlink your own account", inline=False)
+        embed.add_field(name="🌸 Members", value="`!link YourIngameName`\nLink your Discord to your in-game character\n\n`!unlink`\nUnlink your own account", inline=False)
         if is_officer or is_admin or is_owner:
-            embed.add_field(name="\U0001f33f Officers", value="`!bossstats`\nPost the latest raid report to the raid channel\n\n`!previousboss`\nPost the previous raid report to the raid channel", inline=False)
+            embed.add_field(name="🌿 Officers", value="`!bossstats`\nPost the latest raid report to the raid channel\n\n`!previousboss`\nPost the previous raid report to the raid channel", inline=False)
         if is_admin or is_owner:
-            embed.add_field(name="\u2728 Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!testraidalert`\nTest raid alert (posts to logs, no ping)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck live token expiry and rotation status", inline=False)
+            embed.add_field(name="✨ Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!testraidalert`\nTest raid alert (posts to logs, no ping)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck live token expiry and rotation status", inline=False)
         embed.set_footer(text="Role-aware command list")
         await message.channel.send(embed=embed)
 
