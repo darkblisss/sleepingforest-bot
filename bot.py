@@ -629,10 +629,11 @@ def build_boss_embed(raid, lb, members=None):
     init_name = (members or {}).get(init_id) or next((e["character_name"] for e in entries if e.get("character_id") == init_id), "Unknown")
 
     def bar(pct, width=20):
-        # Remaining HP = filled blocks (bar starts full and depletes as HP drops)
-        filled = max(0, min(width, round(pct / 5)))
+        # filled = damage dealt blocks; bar fills left-to-right as boss loses HP
+        damage_pct = 100.0 - pct
+        filled = max(0, min(width, round(damage_pct / 5)))
         empty = width - filled
-        return "█" * filled + "░" * empty
+        return "\u2588" * filled + "\u2591" * empty
 
     NB = "\u00A0"  # non-breaking space
 
@@ -644,7 +645,7 @@ def build_boss_embed(raid, lb, members=None):
         participants_block = "```\nNo participants\n```"
     else:
         # Column widths: Rank(3) Player(13) Damage+%(13) DPS(5)
-        # Use non-breaking spaces so Discord monospace stays aligned
+        # Every space replaced with non-breaking space so Discord preserves alignment
         header_raw = f"{'Rank':<4} {'Player':<13} {'Damage (%)':<13} {'DPS':>5}"
         sep_raw    = "-" * len(header_raw)
         header = header_raw.replace(" ", NB)
