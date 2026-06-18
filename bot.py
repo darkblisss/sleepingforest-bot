@@ -13,7 +13,7 @@ import discord
 from flask import Flask, request as flask_request
 from discord.ext import tasks
 
-# ── Constants ────────────────────────────────────────────────────────────────────────────
+# -- Constants -------------------------------------------------------------------------------
 DEGEN_GUILD_ID  = "d08f77ef-fc13-4781-adce-0fcf88f9f77b"
 CHAR_ID         = "ee938e63-72e6-4b8e-82bf-672ca6e0a568"
 BASE            = "https://api-v1.degenidle.com/api"
@@ -23,16 +23,18 @@ OWNER_ID        = "237324092569681921"
 MEMBERS_FILE    = "members.json"
 SNAPSHOT_FILE   = "snapshots.json"
 WB_STATE_FILE   = "worldboss_state.json"
+RAID_STATE_FILE = "raid_state.json"
 WB_SCHEDULE_URL = "https://api-v1.degenidle.com/api/worldboss/schedule?limit=5"
+GUILD_RAID_STATUS_URL = f"https://api-v1.degenidle.com/api/guild-worldboss/{DEGEN_GUILD_ID}/status?characterId={CHAR_ID}"
 
 # World bosses spawn at 06:00, 14:00, 22:00 UTC - alert 5 minutes before
 WB_SEND_MINUTES_BEFORE  = 5
 WB_LOOKAHEAD_MINUTES    = 20
 WB_BOSS_LEVEL_MAX       = 50
 
-# Raid boss is manually summoned - alert 10 minutes before
+# Raid boss is manually summoned - alert 10 minutes before spawn
 RAID_SEND_MINUTES_BEFORE = 10
-# Post raid report this many seconds after spawn (10 min after the 10 min alert = 20 min total lead time)
+# Post raid report this many seconds after spawn
 RAID_REPORT_DELAY_SECS   = 600
 
 MAX_DONATIONS_PER_DAY  = 25
@@ -50,7 +52,7 @@ MEMBERS_ROLE_ID  = "1487294472478785536"
 ADMIN_ROLE_ID    = "1487296175756410961"
 OFFICER_ROLE_ID  = "1487294633150251089"
 
-# ── Env vars ───────────────────────────────────────────────────────────────────────────
+# -- Env vars --------------------------------------------------------------------------------
 BOT_TOKEN             = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
 DISCORD_GUILD_ID      = os.environ.get("DISCORD_GUILD_ID", "").strip()
 DONATIONS_ROLE_ID     = os.environ.get("DONATIONS_ROLE_ID", "").strip()
@@ -75,7 +77,7 @@ GUILD_API            = f"{BASE}/guilds/character/{CHAR_ID}"
 PROFILE_API          = f"{BASE}/characters/profile/{{name}}"
 LEADERBOARD_API      = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
 
-# ── Fixed UTC schedule times ──────────────────────────────────────────────────────────────────────────
+# -- Fixed UTC schedule times ----------------------------------------------------------------
 GIVEAWAY_TIME  = dtime(hour=0,  minute=0, tzinfo=timezone.utc)
 DONATIONS_TIME = dtime(hour=18, minute=0, tzinfo=timezone.utc)
 ACTIVITY_TIMES = [
@@ -88,7 +90,7 @@ intents.members = True
 bot = discord.Client(intents=intents)
 last_run_week = None
 
-# ── Flask keep-alive ──────────────────────────────────────────────────────────────────────────────
+# -- Flask keep-alive ------------------------------------------------------------------------
 flask_app = Flask(__name__)
 
 @flask_app.route("/")
@@ -120,7 +122,7 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 
-# ── Error alert ─────────────────────────────────────────────────────────────────────────────────
+# -- Error alert -----------------------------------------------------------------------------
 def send_error_alert(message):
     if ERROR_WEBHOOK_URL:
         try:
@@ -128,7 +130,7 @@ def send_error_alert(message):
         except Exception:
             pass
 
-# ── Token helpers ──────────────────────────────────────────────────────────────────────────────
+# -- Token helpers ---------------------------------------------------------------------------
 def _post_token_log(new_token, expires_in=86400):
     expires_unix = int(time.time()) + expires_in
     os.environ["TOKEN_EXPIRES_UNIX"] = str(expires_unix)
@@ -146,7 +148,7 @@ def _post_token_log(new_token, expires_in=86400):
                     f"Expires approximately: <t:{expires_unix}:R> (<t:{expires_unix}:f>)"
                 ),
                 "color": 0x01696f,
-                "footer": {"text": "SleepingForest • Token Rotation"}
+                "footer": {"text": "SleepingForest - Token Rotation"}
             }]
         }, timeout=10)
     except Exception:
@@ -251,7 +253,7 @@ def make_headers(access_token):
         "user-agent": "Mozilla/5.0"
     }
 
-# ── Members helpers ────────────────────────────────────────────────────────────────────────────────
+# -- Members helpers -------------------------------------------------------------------------
 def load_members():
     if not os.path.exists(MEMBERS_FILE):
         return {}
@@ -310,7 +312,7 @@ def has_members_role(member):
         return False
     return any(str(r.id) == MEMBERS_ROLE_ID for r in member.roles)
 
-# ── Guild API helpers ─────────────────────────────────────────────────────────────────────────────
+# -- Guild API helpers -----------------------------------------------------------------------
 def get_guild_member_names(headers):
     try:
         r = requests.get(GUILD_API, headers=headers, timeout=15)
@@ -373,7 +375,7 @@ def get_role_member_ids():
         after = batch[-1]["user"]["id"]
     return {m["user"]["id"] for m in members if DONATIONS_ROLE_ID in m["roles"]}
 
-# ── Daily donations reminder ──────────────────────────────────────────────────────────────────
+# -- Daily donations reminder ----------------------------------------------------------------
 def hours_until_reset():
     now = datetime.now(timezone.utc)
     midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -422,7 +424,7 @@ def run_donations_reminder(webhook_override=None):
         "",
     ]
     for m in not_donated:
-        lines.append(f"• {m['character_name']}")
+        lines.append(f"- {m['character_name']}")
     lines.append("")
     lines.append(f"About {hours} hours until reset, please get your donations in.")
     lines.append("**Need resources? Reach out for help!**")
@@ -440,7 +442,7 @@ def run_donations_reminder(webhook_override=None):
             "title": "Daily Donation Reminder",
             "description": "\n".join(lines),
             "color": 0x958AEA,
-            "footer": {"text": "SleepingForest • DegenIdle"},
+            "footer": {"text": "SleepingForest - DegenIdle"},
             "timestamp": datetime.now(timezone.utc).isoformat()
         }],
         "allowed_mentions": {"parse": ["users"]}
@@ -452,7 +454,7 @@ def run_donations_reminder(webhook_override=None):
 async def donations_loop():
     await asyncio.get_running_loop().run_in_executor(None, run_donations_reminder)
 
-# ── Giveaway ──────────────────────────────────────────────────────────────────────────────────────
+# -- Giveaway --------------------------------------------------------------------------------
 def get_week_ending():
     now = datetime.now(timezone.utc)
     days_since_sunday = (now.weekday() + 1) % 7
@@ -495,7 +497,7 @@ def run_giveaway_logic(test_mode=False):
     if threshold == 0:
         return "aborted: role check failed", logs
     week_ending = get_week_ending()
-    footer_text = f"Week ending {week_ending} • Daily limit: {daily_limit}"
+    footer_text = f"Week ending {week_ending} - Daily limit: {daily_limit}"
     target_webhook = LOGS_WEBHOOK_URL if test_mode else GIVEAWAY_WEBHOOK_URL
     if not eligible:
         requests.post(target_webhook, json={"username": "SleepingForest Giveaway", "embeds": [{
@@ -538,7 +540,7 @@ async def weekly_giveaway():
     last_run_week = week_key
     await asyncio.get_running_loop().run_in_executor(None, run_giveaway_logic)
 
-# ── Member link/unlink ────────────────────────────────────────────────────────────────────────────
+# -- Member link/unlink ----------------------------------------------------------------------
 def do_link(discord_id, ingame_name_input):
     try:
         token = get_access_token()
@@ -583,7 +585,7 @@ def do_members_list():
     lines = [f"**{name}** -> <@{did}>" for name, did in sorted(members.items())]
     return f"**Linked members ({len(lines)}):**\n" + "\n".join(lines)
 
-# ── Boss stats (raid boss, NOT world boss) ──────────────────────────────────────────────────────
+# -- Boss stats (raid boss) ------------------------------------------------------------------
 def fetch_boss_raid(offset=0):
     token = get_access_token()
     h = make_headers(token)
@@ -629,12 +631,11 @@ def build_boss_embed(raid, lb, members=None):
     init_name = (members or {}).get(init_id) or next((e["character_name"] for e in entries if e.get("character_id") == init_id), "Unknown")
 
     def bar(pct, width=20):
-        # Remaining HP = filled blocks (bar starts full and depletes as HP drops)
         filled = max(0, min(width, round(pct / 5)))
         empty = width - filled
-        return "█" * filled + "░" * empty
+        return "#" * filled + "-" * empty
 
-    NB = "\u00A0"  # non-breaking space
+    NB = "\u00A0"
 
     status_line = "**Boss Defeated**" if defeated else "**Boss Survived**"
     hp_left = max(0.0, boss["max_hp"] - total)
@@ -643,8 +644,6 @@ def build_boss_embed(raid, lb, members=None):
     if not entries:
         participants_block = "```\nNo participants\n```"
     else:
-        # Column widths: Rank(3) Player(13) Damage+%(13) DPS(5)
-        # Use non-breaking spaces so Discord monospace stays aligned
         header_raw = f"{'Rank':<4} {'Player':<13} {'Damage (%)':<13} {'DPS':>5}"
         sep_raw    = "-" * len(header_raw)
         header = header_raw.replace(" ", NB)
@@ -675,10 +674,10 @@ def build_boss_embed(raid, lb, members=None):
         "title": f"{boss['name']} Lv.{boss['level']} - Raid Report",
         "description": description,
         "color": 0xE74C3C if not defeated else 0x2ECC71,
-        "footer": {"text": f"SleepingForest • {boss['name']} Lv.{boss['level']}"},
+        "footer": {"text": f"SleepingForest - {boss['name']} Lv.{boss['level']}"},
     }
 
-# ── Post raid boss stats to raid channel after spawn ──────────────────────────────────────────────
+# -- Post raid boss stats after spawn --------------------------------------------------------
 def _post_raid_boss_stats_after_spawn():
     """Posts the latest raid report to the raid channel. Called RAID_REPORT_DELAY_SECS after spawn."""
     target_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
@@ -704,7 +703,7 @@ def _post_raid_boss_stats_after_spawn():
         print(f"[Raid] Failed to post post-spawn stats: {e}")
         send_error_alert(f"Raid post-spawn stats failed: {e}")
 
-# ── Activity checker ──────────────────────────────────────────────────────────────────────────────
+# -- Activity checker ------------------------------------------------------------------------
 def parse_joined_at(s):
     try:
         s = s.replace(" ", "T")
@@ -835,7 +834,7 @@ def run_activity_check():
     since = time_since(last_check_ts) if last_check_ts else "first check"
     if inactive:
         inactive_sorted = sorted(inactive, key=lambda x: (x["last_active_ts"], x["avg_donations_raw"]))
-        member_lines = [f"• {e['name']} ({format_inactive_duration(e['last_active_ts'])}) [{e['avg_donations']}]" for e in inactive_sorted]
+        member_lines = [f"- {e['name']} ({format_inactive_duration(e['last_active_ts'])}) [{e['avg_donations']}]" for e in inactive_sorted]
         requests.post(wh, json={"username": "SleepingForest Warden", "embeds": [{"title": "Inactive Guild Members", "description": f"**{len(inactive)}** member(s) had no XP gains since last check **({since} ago)**.", "color": 0xC0392B, "fields": [{"name": "Members", "value": "\n".join(member_lines), "inline": False}], "footer": {"text": "SleepingForest"}, "timestamp": now_iso}]}, timeout=10)
     else:
         requests.post(wh, json={"username": "SleepingForest Warden", "embeds": [{"title": "All Members Active", "description": f"Every guild member gained XP since the last check **({since} ago)**.", "color": 0x27AE60, "footer": {"text": "SleepingForest"}, "timestamp": now_iso}]}, timeout=10)
@@ -844,7 +843,7 @@ def run_activity_check():
 async def activity_check_loop():
     await asyncio.get_running_loop().run_in_executor(None, run_activity_check)
 
-# ── World boss embed (ingame world bosses at 06:00, 14:00, 22:00 UTC) ────────────────────────────
+# -- World boss (global 06:00 / 14:00 / 22:00 UTC spawns ONLY) -------------------------------
 def wb_load_state():
     if not os.path.exists(WB_STATE_FILE):
         return {"sent": []}
@@ -871,7 +870,7 @@ def wb_spawn_unix(event):
     return int(wb_normalize_dt(event["scheduled_time"]).timestamp())
 
 def wb_build_embed(event):
-    """World boss embed - posted to the world boss channel."""
+    """World boss embed - posted to the world boss channel only."""
     boss = event["boss"]
     unix_ts = wb_spawn_unix(event)
     return {
@@ -879,35 +878,15 @@ def wb_build_embed(event):
         "description": f"**{boss['name']}**\nLevel {boss['level']}\n\nSpawns: <t:{unix_ts}:R>",
         "color": 0x72AEED,
         "image": {"url": boss["image_url"]},
-        "footer": {"text": "SleepingForest • DegenIdle"},
-        "timestamp": wb_normalize_dt(event["scheduled_time"]).astimezone(timezone.utc).isoformat(),
-    }
-
-# ── Raid alert embed (manually summoned raid boss, posted to raid channel) ────────────────────────
-def raid_build_alert_embed(event, test_mode=False):
-    """Raid Alert embed - 10 minutes before a manually summoned raid boss spawns."""
-    boss = event["boss"]
-    unix_ts = wb_spawn_unix(event)
-    title = "Raid Alert" + (" - TEST" if test_mode else "")
-    description = (
-        f"**{boss['name']} (Level {boss['level']})**\n"
-        f"*Spawning in 10 minutes. Get ready!*\n\n"
-        f"• **Cancel** active combat.\n"
-        f"• **Heal** up fully.\n"
-        f"• **Queue** for the raid."
-    )
-    if not test_mode:
-        description += f"\n\nSpawns: <t:{unix_ts}:R>"
-    return {
-        "title": title,
-        "description": description,
-        "color": 0xE74C3C,
-        "thumbnail": {"url": boss["image_url"]},
-        "footer": {"text": "SleepingForest • Raids"},
+        "footer": {"text": "SleepingForest - DegenIdle"},
         "timestamp": wb_normalize_dt(event["scheduled_time"]).astimezone(timezone.utc).isoformat(),
     }
 
 def run_worldboss_check():
+    """
+    Polls the global world boss schedule (06:00 / 14:00 / 22:00 UTC).
+    Posts ONLY to WB_WEBHOOK_URL. Never touches the raid channel.
+    """
     if not WB_WEBHOOK_URL:
         print("[WB] No DISCORD_WB_WEBHOOK set - skipping")
         return
@@ -973,39 +952,8 @@ def run_worldboss_check():
             timeout=20,
         ).raise_for_status()
         print(f"[WB] World boss alert sent for {best_event['boss']['name']} Lv.{boss_level}")
-
-        raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
-        if raid_wh:
-            try:
-                raid_content = ""
-                raid_allowed = {"parse": []}
-                if RAID_ROLE_ID:
-                    raid_content = f"<@&{RAID_ROLE_ID}>"
-                    raid_allowed = {"roles": [RAID_ROLE_ID]}
-                elif MEMBERS_ROLE_ID:
-                    raid_content = f"<@&{MEMBERS_ROLE_ID}>"
-                    raid_allowed = {"roles": [MEMBERS_ROLE_ID]}
-                requests.post(
-                    raid_wh,
-                    json={
-                        "username": "SleepingForest Raids",
-                        "content": raid_content,
-                        "embeds": [raid_build_alert_embed(best_event)],
-                        "allowed_mentions": raid_allowed,
-                    },
-                    timeout=20,
-                ).raise_for_status()
-                print(f"[Raid] Alert sent for {best_event['boss']['name']} Lv.{boss_level}")
-            except Exception as e:
-                print(f"[Raid] Alert failed: {e}")
-
-        secs_to_spawn = wb_seconds_until(best_event)
-        total_wait = secs_to_spawn + RAID_REPORT_DELAY_SECS
-        if total_wait > 0:
-            time.sleep(total_wait)
-        _post_raid_boss_stats_after_spawn()
-
         sent.add(spawn_key)
+
     state["sent"] = list(sent)[-200:]
     wb_save_state(state)
 
@@ -1013,7 +961,155 @@ def run_worldboss_check():
 async def worldboss_loop():
     await asyncio.get_running_loop().run_in_executor(None, run_worldboss_check)
 
-# ── Log helper ────────────────────────────────────────────────────────────────────────────────────
+# -- Guild raid boss (manually initiated by guild members) -----------------------------------
+def raid_load_state():
+    if not os.path.exists(RAID_STATE_FILE):
+        return {"alerted": [], "reported": []}
+    try:
+        with open(RAID_STATE_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {"alerted": [], "reported": []}
+
+def raid_save_state(state):
+    with open(RAID_STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+def raid_build_alert_embed(spawn, test_mode=False):
+    """Raid alert embed - 10 minutes before a guild-initiated raid boss spawns."""
+    boss = spawn["boss"]
+    scheduled_time = spawn["scheduled_time"]
+    s = scheduled_time.replace(" ", "T")
+    if re.search(r"[+-]\d{2}$", s):
+        s += ":00"
+    unix_ts = int(datetime.fromisoformat(s).timestamp())
+    title = "Raid Alert" + (" - TEST" if test_mode else "")
+    description = (
+        f"**{boss['name']} (Level {boss['level']})**\n"
+        f"*Spawning in 10 minutes. Get ready!*\n\n"
+        f"- Cancel active combat.\n"
+        f"- Heal up fully.\n"
+        f"- Queue for the raid."
+    )
+    if not test_mode:
+        description += f"\n\nSpawns: <t:{unix_ts}:R>"
+    return {
+        "title": title,
+        "description": description,
+        "color": 0xE74C3C,
+        "thumbnail": {"url": boss["image_url"]},
+        "footer": {"text": "SleepingForest - Raids"},
+    }
+
+def run_guild_raid_check():
+    """
+    Polls the guild-specific raid status endpoint.
+    Only fires raid alerts and raid reports for manually initiated guild raids.
+    Never touches the world boss channel.
+    """
+    if not RAID_WEBHOOK_URL and not LOGS_WEBHOOK_URL:
+        return
+    try:
+        access_token = get_access_token()
+    except Exception as e:
+        print(f"[Raid] Token refresh failed: {e}")
+        return
+    headers = make_headers(access_token)
+    state = raid_load_state()
+    alerted = set(state.get("alerted", []))
+    reported = set(state.get("reported", []))
+
+    try:
+        r = requests.get(GUILD_RAID_STATUS_URL, headers=headers, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"[Raid] Guild status fetch failed: {e}")
+        return
+
+    if not data.get("success"):
+        return
+
+    spawn = data.get("data", {}).get("active_spawn")
+    if not spawn:
+        # No active guild raid right now
+        return
+
+    spawn_id = spawn["id"]
+    status = spawn.get("status", "")
+    scheduled_str = spawn.get("scheduled_time", "")
+
+    # Parse spawn time
+    try:
+        s = scheduled_str.replace(" ", "T")
+        if re.search(r"[+-]\d{2}$", s):
+            s += ":00"
+        spawn_dt = datetime.fromisoformat(s)
+        secs_until_spawn = (spawn_dt - datetime.now(timezone.utc)).total_seconds()
+    except Exception as e:
+        print(f"[Raid] Could not parse scheduled_time: {e}")
+        return
+
+    alert_key = f"{spawn_id}:alert"
+    report_key = f"{spawn_id}:report"
+
+    # Send alert if within 10-20 minutes of spawn and not already alerted
+    alert_window = RAID_SEND_MINUTES_BEFORE * 60  # 600 secs
+    if alert_key not in alerted and 0 < secs_until_spawn <= (alert_window + 10 * 60):
+        raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
+        try:
+            raid_content = ""
+            raid_allowed = {"parse": []}
+            if RAID_ROLE_ID:
+                raid_content = f"<@&{RAID_ROLE_ID}>"
+                raid_allowed = {"roles": [RAID_ROLE_ID]}
+            elif MEMBERS_ROLE_ID:
+                raid_content = f"<@&{MEMBERS_ROLE_ID}>"
+                raid_allowed = {"roles": [MEMBERS_ROLE_ID]}
+            requests.post(
+                raid_wh,
+                json={
+                    "username": "SleepingForest Raids",
+                    "content": raid_content,
+                    "embeds": [raid_build_alert_embed(spawn)],
+                    "allowed_mentions": raid_allowed,
+                },
+                timeout=20,
+            ).raise_for_status()
+            print(f"[Raid] Alert sent for guild raid: {spawn['boss']['name']} Lv.{spawn['boss']['level']}")
+            alerted.add(alert_key)
+        except Exception as e:
+            print(f"[Raid] Alert post failed: {e}")
+
+    # Post raid report once the raid is done and not already reported
+    if report_key not in reported and status in ("completed", "defeated", "failed", "ended"):
+        try:
+            raid, lb, guild_members = fetch_boss_raid(0)
+            if raid and raid["id"] == spawn_id:
+                raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
+                requests.post(
+                    raid_wh,
+                    json={
+                        "username": "SleepingForest Raids",
+                        "embeds": [build_boss_embed(raid, lb, guild_members)],
+                        "allowed_mentions": {"parse": []},
+                    },
+                    timeout=15,
+                ).raise_for_status()
+                print(f"[Raid] Report posted for guild raid: {spawn['boss']['name']}")
+                reported.add(report_key)
+        except Exception as e:
+            print(f"[Raid] Report post failed: {e}")
+
+    state["alerted"] = list(alerted)[-200:]
+    state["reported"] = list(reported)[-200:]
+    raid_save_state(state)
+
+@tasks.loop(minutes=2)
+async def guild_raid_loop():
+    await asyncio.get_running_loop().run_in_executor(None, run_guild_raid_check)
+
+# -- Log helper ------------------------------------------------------------------------------
 async def send_log(msg):
     if not LOGS_WEBHOOK_URL:
         return
@@ -1022,7 +1118,7 @@ async def send_log(msg):
     except Exception:
         pass
 
-# ── Discord commands ──────────────────────────────────────────────────────────────────────────────
+# -- Discord commands ------------------------------------------------------------------------
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
@@ -1173,15 +1269,16 @@ async def on_message(message):
                 target_wh = LOGS_WEBHOOK_URL
                 if not target_wh:
                     return "No DISCORD_LOGS_WEBHOOK set."
-                fake_event = {
+                fake_spawn = {
+                    "id": "test",
                     "boss": {
                         "name": "Rimegard",
                         "level": 10,
-                        "image_url": "https://api-v1.degenidle.com/assets/bosses/rimegard.png",
+                        "image_url": "https://cdn.degendungeon.com/Monsters/Worldboss/rimegard.png",
                     },
                     "scheduled_time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                 }
-                embed = raid_build_alert_embed(fake_event, test_mode=True)
+                embed = raid_build_alert_embed(fake_spawn, test_mode=True)
                 requests.post(
                     target_wh,
                     json={
@@ -1257,9 +1354,9 @@ async def on_message(message):
             if not raid:
                 await message.channel.send("No raid history found.")
                 return
-            target_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
+            target_wh = LOGS_WEBHOOK_URL
             if not target_wh:
-                await message.channel.send("No RAID_WEBHOOK_URL or DISCORD_LOGS_WEBHOOK is set.")
+                await message.channel.send("No DISCORD_LOGS_WEBHOOK is set.")
                 return
             requests.post(
                 target_wh,
@@ -1270,7 +1367,7 @@ async def on_message(message):
                 },
                 timeout=15,
             ).raise_for_status()
-            await message.channel.send("Boss stats posted.")
+            await message.channel.send("Boss stats posted to logs.")
         except Exception as e:
             await message.channel.send(f"Error: `{e}`")
 
@@ -1283,9 +1380,9 @@ async def on_message(message):
             if not raid:
                 await message.channel.send("No previous boss raid found.")
                 return
-            target_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
+            target_wh = LOGS_WEBHOOK_URL
             if not target_wh:
-                await message.channel.send("No RAID_WEBHOOK_URL or DISCORD_LOGS_WEBHOOK is set.")
+                await message.channel.send("No DISCORD_LOGS_WEBHOOK is set.")
                 return
             requests.post(
                 target_wh,
@@ -1296,7 +1393,7 @@ async def on_message(message):
                 },
                 timeout=15,
             ).raise_for_status()
-            await message.channel.send("Previous boss stats posted.")
+            await message.channel.send("Previous boss stats posted to logs.")
         except Exception as e:
             await message.channel.send(f"Error: `{e}`")
 
@@ -1304,7 +1401,7 @@ async def on_message(message):
         embed = discord.Embed(title="SleepingForest Bot Commands", description="Commands available for your current roles.", color=0x958AEA)
         embed.add_field(name="Members", value="`!link YourIngameName`\nLink your Discord to your in-game character\n\n`!unlink`\nUnlink your own account", inline=False)
         if is_officer or is_admin or is_owner:
-            embed.add_field(name="Officers", value="`!bossstats`\nPost the latest raid report\n\n`!previousboss`\nPost the previous raid report", inline=False)
+            embed.add_field(name="Officers", value="`!bossstats`\nPost the latest raid report to logs\n\n`!previousboss`\nPost the previous raid report to logs", inline=False)
         if is_admin or is_owner:
             embed.add_field(name="Admins", value="`!link @user IngameName`\nLink another user\n\n`!unlink CharName`\nForce-unlink any member\n\n`!members`\nList all linked members\n\n`!activitycheck`\nRun the activity check now\n\n`!testgiveaway`\nTest giveaway (posts to logs)\n\n`!testdonations`\nTest donations reminder (posts to logs)\n\n`!testraidalert`\nTest raid alert (posts to logs, no ping)\n\n`!settoken`\nUpdate the DegenIdle API token\n\n`!tokenexpiry`\nCheck live token expiry and rotation status", inline=False)
         embed.set_footer(text="Role-aware command list")
@@ -1338,5 +1435,7 @@ async def on_ready():
         activity_check_loop.start()
     if not worldboss_loop.is_running():
         worldboss_loop.start()
+    if not guild_raid_loop.is_running():
+        guild_raid_loop.start()
 
 bot.run(BOT_TOKEN)
