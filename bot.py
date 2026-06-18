@@ -629,36 +629,36 @@ def build_boss_embed(raid, lb, members=None):
     init_name = (members or {}).get(init_id) or next((e["character_name"] for e in entries if e.get("character_id") == init_id), "Unknown")
 
     def bar(pct, width=20):
-        # Damage dealt = filled blocks (bar depletes left to right as HP drops)
-        damage_pct = 100.0 - pct
-        filled = max(0, min(width, round(damage_pct / 5)))
+        # Remaining HP = filled blocks (bar starts full and depletes as HP drops)
+        filled = max(0, min(width, round(pct / 5)))
         empty = width - filled
         return "█" * filled + "░" * empty
 
-    def trunc(name, max_width=9):
-        if len(name) <= max_width:
-            return name
-        return name[:max_width - 1] + "."
+    NB = "\u00A0"  # non-breaking space
 
     status_line = "**Boss Defeated**" if defeated else "**Boss Survived**"
     hp_left = max(0.0, boss["max_hp"] - total)
     hp_val = f"`[{bar(hp_remaining_pct)}]` **{round(hp_remaining_pct, 1)}% HP remaining**\n{fmt(hp_left)} HP left"
 
     if not entries:
-        participants_block = "```text\nNo participants\n```"
+        participants_block = "```\nNo participants\n```"
     else:
-        # Compact columns: Rk(3) Player(9) Dmg(6) DPS(4) %(5)
-        header = f"{'Rk':<3} {'Player':<9} {'Dmg':>6} {'DPS':>4} {'%':>5}"
-        sep    = "-" * len(header)
+        # Column widths: Rank(3) Player(13) Damage+%(13) DPS(5)
+        # Use non-breaking spaces so Discord monospace stays aligned
+        header_raw = f"{'Rank':<4} {'Player':<13} {'Damage (%)':<13} {'DPS':>5}"
+        sep_raw    = "-" * len(header_raw)
+        header = header_raw.replace(" ", NB)
+        sep    = sep_raw.replace("-", "\u2014").replace(" ", NB)
         rows = [header, sep]
         for i, e in enumerate(entries):
-            dps = e["damage_dealt"] / secs if secs else 0
-            name = trunc(e["character_name"], 9)
+            dps_val = round(e["damage_dealt"] / secs) if secs else 0
             pct_val = round(e["percentage"], 1)
-            rows.append(
-                f"#{i+1:<2} {name:<9} {fmt(e['damage_dealt']):>6} {round(dps):>4} {pct_val:>4}%"
-            )
-        participants_block = "```text\n" + "\n".join(rows) + "\n```"
+            name    = e["character_name"]
+            dmg_pct = f"{fmt(e['damage_dealt'])} ({pct_val}%)"
+            rank    = f"#{i+1}"
+            row_raw = f"{rank:<4} {name:<13} {dmg_pct:<13} {dps_val:>5}"
+            rows.append(row_raw.replace(" ", NB))
+        participants_block = "```\n" + "\n".join(rows) + "\n```"
 
     description = (
         f"{status_line}\n\n"
