@@ -1052,7 +1052,7 @@ def run_guild_raid_check():
     report_key = f"{spawn_id}:report"
 
     alert_window = RAID_SEND_MINUTES_BEFORE * 60
-    if alert_key not in alerted and 0 < secs_until_spawn <= (alert_window + 10 * 60):
+    if alert_key not in alerted and 0 < secs_until_spawn <= (alert_window + 2 * 60):
         raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
         try:
             raid_content = ""
