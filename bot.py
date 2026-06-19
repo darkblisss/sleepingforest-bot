@@ -659,6 +659,9 @@ def build_boss_embed(raid, lb, members=None):
             rows.append(row_raw.replace(" ", NB))
         participants_block = "```\n" + "\n".join(rows) + "\n```"
 
+    # Footer uses the raid's scheduled date
+    footer_date = dt.strftime("%d/%m/%Y")
+
     description = (
         f"{status_line}\n\n"
         f"**Date:** {date_str}\n"
@@ -674,7 +677,7 @@ def build_boss_embed(raid, lb, members=None):
         "title": f"{boss['name']} Lv.{boss['level']} - Raid Report",
         "description": description,
         "color": 0xE74C3C if not defeated else 0x2ECC71,
-        "footer": {"text": f"SleepingForest - Raids"},
+        "footer": {"text": f"SleepingForest - Raids\u2022{footer_date}"},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -982,8 +985,8 @@ def run_guild_raid_check():
     Polls the guild-specific raid status endpoint.
     Only fires raid alerts and raid reports for manually initiated guild raids.
     Never touches the world boss channel.
-    Auto-report triggers as soon as the raid status is completed/defeated/failed/ended,
-    regardless of whether active_spawn is still present.
+    Auto-report triggers only after the raid is confirmed finished (boss_defeated set),
+    then fetches the completed raid from history and posts to the raid webhook.
     """
     if not RAID_WEBHOOK_URL and not LOGS_WEBHOOK_URL:
         return
@@ -1010,13 +1013,13 @@ def run_guild_raid_check():
 
     spawn = data.get("data", {}).get("active_spawn")
     if not spawn:
-        # No active spawn - check if we have alerted raids that haven't been reported yet.
-        # Fetch the latest raid from history and post if it matches an alerted ID.
+        # No active spawn - check if we have alerted raids that haven't been reported.
+        # Only post if the most recent history entry is boss_defeated (raid is truly finished).
         unreported = [k.replace(":alert", "") for k in alerted if k.endswith(":alert") and f"{k.replace(':alert', '')}:report" not in reported]
         if unreported:
             try:
                 raid, lb, guild_members = fetch_boss_raid(0)
-                if raid and str(raid["id"]) in unreported:
+                if raid and str(raid["id"]) in unreported and raid.get("boss_defeated") is not None:
                     report_key = f"{raid['id']}:report"
                     raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
                     requests.post(
@@ -1081,10 +1084,11 @@ def run_guild_raid_check():
         except Exception as e:
             print(f"[Raid] Alert post failed: {e}")
 
+    # Only post report once the raid is fully finished (status completed/defeated/failed/ended)
     if report_key not in reported and status in ("completed", "defeated", "failed", "ended"):
         try:
             raid, lb, guild_members = fetch_boss_raid(0)
-            if raid and str(raid["id"]) == spawn_id:
+            if raid and str(raid["id"]) == spawn_id and raid.get("boss_defeated") is not None:
                 raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
                 requests.post(
                     raid_wh,
@@ -1193,7 +1197,18 @@ async def on_message(message):
                 await message.channel.send("No raid history found.")
                 return
             embed = build_boss_embed(raid, lb, members_map)
-            await message.channel.send(embed=discord.Embed.from_dict(embed))
+            target_wh = LOGS_WEBHOOK_URL
+            if target_wh:
+                requests.post(
+                    target_wh,
+                    json={
+                        "username": "SleepingForest Raids",
+                        "embeds": [embed],
+                        "allowed_mentions": {"parse": []},
+                    },
+                    timeout=15,
+                )
+            await message.channel.send("Boss stats posted to logs.")
         except Exception as e:
             await message.channel.send(f"Failed to fetch boss stats: {e}")
         return
@@ -1306,7 +1321,7 @@ async def on_message(message):
             "`!unlink` - Unlink your own account\n"
             "`!unlink <ingame_name>` - (Officer+) Force-unlink a member\n"
             "`!members` - (Officer+) List all linked members\n"
-            "`!bossstats [offset]` - Post latest raid stats in this channel\n"
+            "`!bossstats [offset]` - Post latest raid stats to logs channel\n"
             "`!checktoken` - (Admin) Check token status\n"
             "`!settoken <token>` - (Admin) Set a new refresh token\n"
             "`!testraid` - (Officer+) Test raid alert\n"
