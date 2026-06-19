@@ -626,7 +626,7 @@ def build_boss_embed(raid, lb, members=None):
         secs = max(1, (e - s).total_seconds())
     dur = (lambda m, sc: f"{m}m {sc}s" if m else f"{sc}s")(*divmod(int(secs), 60)) if secs else "N/A"
     dt = datetime.fromisoformat(raid["scheduled_time"].replace(" ", "T").split("+")[0] + "+00:00")
-    date_str = dt.strftime("%b %d, %Y")
+    date_str = dt.strftime("%d/%m/%Y")
     init_id = raid.get("initiator_character_id", "")
     init_name = (members or {}).get(init_id) or next((e["character_name"] for e in entries if e.get("character_id") == init_id), "Unknown")
 
@@ -674,34 +674,9 @@ def build_boss_embed(raid, lb, members=None):
         "title": f"{boss['name']} Lv.{boss['level']} - Raid Report",
         "description": description,
         "color": 0xE74C3C if not defeated else 0x2ECC71,
-        "footer": {"text": f"SleepingForest - {boss['name']} Lv.{boss['level']}"},
+        "footer": {"text": f"SleepingForest - Raids"},
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-
-# -- Post raid boss stats after spawn --------------------------------------------------------
-def _post_raid_boss_stats_after_spawn():
-    """Posts the latest raid report to the raid channel. Called RAID_REPORT_DELAY_SECS after spawn."""
-    target_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
-    if not target_wh:
-        print("[Raid] No RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL set - skipping post-spawn stats")
-        return
-    try:
-        raid, lb, members = fetch_boss_raid(0)
-        if not raid:
-            print("[Raid] No raid history found for post-spawn stats")
-            return
-        requests.post(
-            target_wh,
-            json={
-                "username": "SleepingForest Raids",
-                "embeds": [build_boss_embed(raid, lb, members)],
-                "allowed_mentions": {"parse": []},
-            },
-            timeout=15,
-        ).raise_for_status()
-        print("[Raid] Post-spawn stats posted to raid channel")
-    except Exception as e:
-        print(f"[Raid] Failed to post post-spawn stats: {e}")
-        send_error_alert(f"Raid post-spawn stats failed: {e}")
 
 # -- Activity checker ------------------------------------------------------------------------
 def parse_joined_at(s):
@@ -987,9 +962,9 @@ def raid_build_alert_embed(spawn, test_mode=False):
     description = (
         f"**{boss['name']} (Level {boss['level']})**\n"
         f"*Spawning in 10 minutes. Get ready!*\n\n"
-        f"- Cancel active combat.\n"
-        f"- Heal up fully.\n"
-        f"- Queue for the raid."
+        f"- **Cancel** active combat.\n"
+        f"- **Heal** up fully.\n"
+        f"- **Queue** for the raid."
     )
     if not test_mode:
         description += f"\n\nSpawns: <t:{unix_ts}:R>"
@@ -999,6 +974,7 @@ def raid_build_alert_embed(spawn, test_mode=False):
         "color": 0xE74C3C,
         "thumbnail": {"url": boss["image_url"]},
         "footer": {"text": "SleepingForest - Raids"},
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 def run_guild_raid_check():
@@ -1006,6 +982,8 @@ def run_guild_raid_check():
     Polls the guild-specific raid status endpoint.
     Only fires raid alerts and raid reports for manually initiated guild raids.
     Never touches the world boss channel.
+    Auto-report triggers as soon as the raid status is completed/defeated/failed/ended,
+    regardless of whether active_spawn is still present.
     """
     if not RAID_WEBHOOK_URL and not LOGS_WEBHOOK_URL:
         return
@@ -1032,9 +1010,34 @@ def run_guild_raid_check():
 
     spawn = data.get("data", {}).get("active_spawn")
     if not spawn:
+        # No active spawn - check if we have alerted raids that haven't been reported yet.
+        # Fetch the latest raid from history and post if it matches an alerted ID.
+        unreported = [k.replace(":alert", "") for k in alerted if k.endswith(":alert") and f"{k.replace(':alert', '')}:report" not in reported]
+        if unreported:
+            try:
+                raid, lb, guild_members = fetch_boss_raid(0)
+                if raid and str(raid["id"]) in unreported:
+                    report_key = f"{raid['id']}:report"
+                    raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
+                    requests.post(
+                        raid_wh,
+                        json={
+                            "username": "SleepingForest Raids",
+                            "embeds": [build_boss_embed(raid, lb, guild_members)],
+                            "allowed_mentions": {"parse": []},
+                        },
+                        timeout=15,
+                    ).raise_for_status()
+                    print(f"[Raid] Auto-report posted (post-spawn history): {raid['boss']['name']}")
+                    reported.add(report_key)
+                    state["alerted"] = list(alerted)[-200:]
+                    state["reported"] = list(reported)[-200:]
+                    raid_save_state(state)
+            except Exception as e:
+                print(f"[Raid] Auto-report (post-spawn) failed: {e}")
         return
 
-    spawn_id = spawn["id"]
+    spawn_id = str(spawn["id"])
     status = spawn.get("status", "")
     scheduled_str = spawn.get("scheduled_time", "")
 
@@ -1081,7 +1084,7 @@ def run_guild_raid_check():
     if report_key not in reported and status in ("completed", "defeated", "failed", "ended"):
         try:
             raid, lb, guild_members = fetch_boss_raid(0)
-            if raid and raid["id"] == spawn_id:
+            if raid and str(raid["id"]) == spawn_id:
                 raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
                 requests.post(
                     raid_wh,
@@ -1184,26 +1187,13 @@ async def on_message(message):
                 offset = int(parts[1])
             except ValueError:
                 pass
-        target_wh = LOGS_WEBHOOK_URL
-        if not target_wh:
-            await message.channel.send("No logs webhook configured.")
-            return
         try:
             raid, lb, members_map = await asyncio.get_running_loop().run_in_executor(None, fetch_boss_raid, offset)
             if not raid:
                 await message.channel.send("No raid history found.")
                 return
             embed = build_boss_embed(raid, lb, members_map)
-            requests.post(
-                target_wh,
-                json={
-                    "username": "SleepingForest Raids",
-                    "embeds": [embed],
-                    "allowed_mentions": {"parse": []},
-                },
-                timeout=15,
-            ).raise_for_status()
-            await message.channel.send("Boss stats posted to logs.")
+            await message.channel.send(embed=discord.Embed.from_dict(embed))
         except Exception as e:
             await message.channel.send(f"Failed to fetch boss stats: {e}")
         return
@@ -1316,7 +1306,7 @@ async def on_message(message):
             "`!unlink` - Unlink your own account\n"
             "`!unlink <ingame_name>` - (Officer+) Force-unlink a member\n"
             "`!members` - (Officer+) List all linked members\n"
-            "`!bossstats [offset]` - Post latest raid stats to logs\n"
+            "`!bossstats [offset]` - Post latest raid stats in this channel\n"
             "`!checktoken` - (Admin) Check token status\n"
             "`!settoken <token>` - (Admin) Set a new refresh token\n"
             "`!testraid` - (Officer+) Test raid alert\n"
