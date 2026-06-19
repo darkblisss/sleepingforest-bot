@@ -32,10 +32,8 @@ WB_SEND_MINUTES_BEFORE  = 5
 WB_LOOKAHEAD_MINUTES    = 20
 WB_BOSS_LEVEL_MAX       = 50
 
-# Raid boss is manually summoned - alert 10 minutes before spawn
+# Raid boss is manually summoned - alert exactly 10 minutes before spawn
 RAID_SEND_MINUTES_BEFORE = 10
-# Post raid report this many seconds after spawn
-RAID_REPORT_DELAY_SECS   = 600
 
 MAX_DONATIONS_PER_DAY  = 25
 SKILLS = [
@@ -89,6 +87,10 @@ intents.message_content = True
 intents.members = True
 bot = discord.Client(intents=intents)
 last_run_week = None
+
+# Tracks raid IDs we have already scheduled an alert task for, so we never double-fire.
+_raid_alert_scheduled = set()
+_raid_report_scheduled = set()
 
 # -- Flask keep-alive ------------------------------------------------------------------------
 flask_app = Flask(__name__)
@@ -659,7 +661,6 @@ def build_boss_embed(raid, lb, members=None):
             rows.append(row_raw.replace(" ", NB))
         participants_block = "```\n" + "\n".join(rows) + "\n```"
 
-    # Footer uses the raid's scheduled date
     footer_date = dt.strftime("%d/%m/%Y")
 
     description = (
@@ -848,7 +849,6 @@ def wb_spawn_unix(event):
     return int(wb_normalize_dt(event["scheduled_time"]).timestamp())
 
 def wb_build_embed(event):
-    """World boss embed - posted to the world boss channel only."""
     boss = event["boss"]
     unix_ts = wb_spawn_unix(event)
     return {
@@ -861,10 +861,6 @@ def wb_build_embed(event):
     }
 
 def run_worldboss_check():
-    """
-    Polls the global world boss schedule (06:00 / 14:00 / 22:00 UTC).
-    Posts ONLY to WB_WEBHOOK_URL. Never touches the raid channel.
-    """
     if not WB_WEBHOOK_URL:
         print("[WB] No DISCORD_WB_WEBHOOK set - skipping")
         return
@@ -954,7 +950,6 @@ def raid_save_state(state):
         json.dump(state, f, indent=2)
 
 def raid_build_alert_embed(spawn, test_mode=False):
-    """Raid alert embed - 10 minutes before a guild-initiated raid boss spawns."""
     boss = spawn["boss"]
     scheduled_time = spawn["scheduled_time"]
     s = scheduled_time.replace(" ", "T")
@@ -980,48 +975,118 @@ def raid_build_alert_embed(spawn, test_mode=False):
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-def run_guild_raid_check():
-    """
-    Polls the guild-specific raid status endpoint.
-    Only fires raid alerts and raid reports for manually initiated guild raids.
-    Never touches the world boss channel.
-    Auto-report triggers only after the raid is confirmed finished (boss_defeated set),
-    then fetches the completed raid from history and posts to the raid webhook.
-    """
-    if not RAID_WEBHOOK_URL and not LOGS_WEBHOOK_URL:
+def _post_raid_alert(spawn):
+    """Post the raid alert embed to the raid webhook."""
+    raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
+    if not raid_wh:
         return
-    try:
-        access_token = get_access_token()
-    except Exception as e:
-        print(f"[Raid] Token refresh failed: {e}")
+    raid_content = ""
+    raid_allowed = {"parse": []}
+    if RAID_ROLE_ID:
+        raid_content = f"<@&{RAID_ROLE_ID}>"
+        raid_allowed = {"roles": [RAID_ROLE_ID]}
+    elif MEMBERS_ROLE_ID:
+        raid_content = f"<@&{MEMBERS_ROLE_ID}>"
+        raid_allowed = {"roles": [MEMBERS_ROLE_ID]}
+    requests.post(
+        raid_wh,
+        json={
+            "username": "SleepingForest Raids",
+            "content": raid_content,
+            "embeds": [raid_build_alert_embed(spawn)],
+            "allowed_mentions": raid_allowed,
+        },
+        timeout=20,
+    ).raise_for_status()
+    print(f"[Raid] Alert sent for guild raid: {spawn['boss']['name']} Lv.{spawn['boss']['level']}")
+
+def _post_raid_report(raid_id):
+    """Fetch completed raid from history and post the report to the raid webhook."""
+    raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
+    if not raid_wh:
         return
-    headers = make_headers(access_token)
+    raid, lb, guild_members = fetch_boss_raid(0)
+    if not raid or str(raid["id"]) != str(raid_id):
+        print(f"[Raid] Report: history[0] id={raid['id'] if raid else 'none'} != expected {raid_id}, skipping")
+        return
+    if raid.get("boss_defeated") is None:
+        print(f"[Raid] Report: boss_defeated is None for {raid_id}, raid not finished yet")
+        return
+    requests.post(
+        raid_wh,
+        json={
+            "username": "SleepingForest Raids",
+            "embeds": [build_boss_embed(raid, lb, guild_members)],
+            "allowed_mentions": {"parse": []},
+        },
+        timeout=15,
+    ).raise_for_status()
+    print(f"[Raid] Auto-report posted for raid {raid_id}: {raid['boss']['name']}")
+
+def _parse_spawn_dt(scheduled_str):
+    s = scheduled_str.replace(" ", "T")
+    if re.search(r"[+-]\d{2}$", s):
+        s += ":00"
+    return datetime.fromisoformat(s)
+
+async def _raid_alert_task(spawn_id, spawn, alert_unix, state):
+    """
+    Sleep until exactly (spawn_time - 10 minutes), then post the alert.
+    Uses asyncio.sleep so it is non-blocking and precise to the second.
+    """
+    now_unix = datetime.now(timezone.utc).timestamp()
+    sleep_secs = alert_unix - now_unix
+    if sleep_secs > 0:
+        print(f"[Raid] Alert task sleeping {sleep_secs:.1f}s until exact 10-min mark for raid {spawn_id}")
+        await asyncio.sleep(sleep_secs)
+
+    # Re-check we haven't already alerted (e.g. bot restarted mid-sleep)
     state = raid_load_state()
     alerted = set(state.get("alerted", []))
-    reported = set(state.get("reported", []))
+    alert_key = f"{spawn_id}:alert"
+    if alert_key in alerted:
+        print(f"[Raid] Alert already sent for {spawn_id}, skipping")
+        _raid_alert_scheduled.discard(spawn_id)
+        return
 
     try:
-        r = requests.get(GUILD_RAID_STATUS_URL, headers=headers, timeout=20)
-        r.raise_for_status()
-        data = r.json()
+        _post_raid_alert(spawn)
+        alerted.add(alert_key)
+        state["alerted"] = list(alerted)[-200:]
+        raid_save_state(state)
     except Exception as e:
-        print(f"[Raid] Guild status fetch failed: {e}")
-        return
+        print(f"[Raid] Alert post failed: {e}")
+    finally:
+        _raid_alert_scheduled.discard(spawn_id)
 
-    if not data.get("success"):
-        return
+async def _raid_report_task(spawn_id, spawn_dt):
+    """
+    Sleep until the boss is due to have spawned, then poll every 30s until
+    boss_defeated is set, then post the report.
+    """
+    # Wait until spawn time first
+    now_unix = datetime.now(timezone.utc).timestamp()
+    spawn_unix = spawn_dt.timestamp()
+    wait_to_spawn = spawn_unix - now_unix
+    if wait_to_spawn > 0:
+        print(f"[Raid] Report task sleeping {wait_to_spawn:.1f}s until spawn for raid {spawn_id}")
+        await asyncio.sleep(wait_to_spawn)
 
-    spawn = data.get("data", {}).get("active_spawn")
-    if not spawn:
-        # No active spawn - check if we have alerted raids that haven't been reported.
-        # Only post if the most recent history entry is boss_defeated (raid is truly finished).
-        unreported = [k.replace(":alert", "") for k in alerted if k.endswith(":alert") and f"{k.replace(':alert', '')}:report" not in reported]
-        if unreported:
-            try:
-                raid, lb, guild_members = fetch_boss_raid(0)
-                if raid and str(raid["id"]) in unreported and raid.get("boss_defeated") is not None:
-                    report_key = f"{raid['id']}:report"
-                    raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
+    # Poll every 30s until the raid is finished (max 20 minutes after spawn)
+    deadline = spawn_dt.timestamp() + 20 * 60
+    while datetime.now(timezone.utc).timestamp() < deadline:
+        state = raid_load_state()
+        reported = set(state.get("reported", []))
+        report_key = f"{spawn_id}:report"
+        if report_key in reported:
+            _raid_report_scheduled.discard(spawn_id)
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            raid, lb, guild_members = await loop.run_in_executor(None, fetch_boss_raid, 0)
+            if raid and str(raid["id"]) == str(spawn_id) and raid.get("boss_defeated") is not None:
+                raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
+                if raid_wh:
                     requests.post(
                         raid_wh,
                         json={
@@ -1031,86 +1096,95 @@ def run_guild_raid_check():
                         },
                         timeout=15,
                     ).raise_for_status()
-                    print(f"[Raid] Auto-report posted (post-spawn history): {raid['boss']['name']}")
-                    reported.add(report_key)
-                    state["alerted"] = list(alerted)[-200:]
-                    state["reported"] = list(reported)[-200:]
-                    raid_save_state(state)
-            except Exception as e:
-                print(f"[Raid] Auto-report (post-spawn) failed: {e}")
+                    print(f"[Raid] Auto-report posted for raid {spawn_id}")
+                reported.add(report_key)
+                state["reported"] = list(reported)[-200:]
+                raid_save_state(state)
+                _raid_report_scheduled.discard(spawn_id)
+                return
+        except Exception as e:
+            print(f"[Raid] Report poll error: {e}")
+        await asyncio.sleep(30)
+
+    print(f"[Raid] Report task timed out for raid {spawn_id} - boss may still be alive")
+    _raid_report_scheduled.discard(spawn_id)
+
+def run_guild_raid_poll():
+    """
+    Lightweight poll: just fetch the active spawn and return it.
+    All timing logic is handled by dedicated asyncio tasks.
+    """
+    if not RAID_WEBHOOK_URL and not LOGS_WEBHOOK_URL:
+        return None
+    try:
+        access_token = get_access_token()
+    except Exception as e:
+        print(f"[Raid] Token refresh failed: {e}")
+        return None
+    headers = make_headers(access_token)
+    try:
+        r = requests.get(GUILD_RAID_STATUS_URL, headers=headers, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"[Raid] Guild status fetch failed: {e}")
+        return None
+    if not data.get("success"):
+        return None
+    return data.get("data", {}).get("active_spawn")
+
+@tasks.loop(minutes=2)
+async def guild_raid_loop():
+    """
+    Every 2 minutes: check for a new active spawn.
+    If a new spawn is detected, schedule a precise asyncio alert task and a report task.
+    The actual posting is done by those tasks at the exact right moment - not here.
+    """
+    spawn = await asyncio.get_running_loop().run_in_executor(None, run_guild_raid_poll)
+    if not spawn:
         return
 
     spawn_id = str(spawn["id"])
-    status = spawn.get("status", "")
     scheduled_str = spawn.get("scheduled_time", "")
 
     try:
-        s = scheduled_str.replace(" ", "T")
-        if re.search(r"[+-]\d{2}$", s):
-            s += ":00"
-        spawn_dt = datetime.fromisoformat(s)
-        secs_until_spawn = (spawn_dt - datetime.now(timezone.utc)).total_seconds()
+        spawn_dt = _parse_spawn_dt(scheduled_str)
     except Exception as e:
         print(f"[Raid] Could not parse scheduled_time: {e}")
         return
 
+    alert_unix = spawn_dt.timestamp() - RAID_SEND_MINUTES_BEFORE * 60
+
+    # Only schedule the alert task if we haven't already and it's not too late
+    state = raid_load_state()
+    alerted = set(state.get("alerted", []))
+    reported = set(state.get("reported", []))
     alert_key = f"{spawn_id}:alert"
     report_key = f"{spawn_id}:report"
 
-    alert_window = RAID_SEND_MINUTES_BEFORE * 60
-    if alert_key not in alerted and 0 < secs_until_spawn <= (alert_window + 2 * 60):
-        raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
-        try:
-            raid_content = ""
-            raid_allowed = {"parse": []}
-            if RAID_ROLE_ID:
-                raid_content = f"<@&{RAID_ROLE_ID}>"
-                raid_allowed = {"roles": [RAID_ROLE_ID]}
-            elif MEMBERS_ROLE_ID:
-                raid_content = f"<@&{MEMBERS_ROLE_ID}>"
-                raid_allowed = {"roles": [MEMBERS_ROLE_ID]}
-            requests.post(
-                raid_wh,
-                json={
-                    "username": "SleepingForest Raids",
-                    "content": raid_content,
-                    "embeds": [raid_build_alert_embed(spawn)],
-                    "allowed_mentions": raid_allowed,
-                },
-                timeout=20,
-            ).raise_for_status()
-            print(f"[Raid] Alert sent for guild raid: {spawn['boss']['name']} Lv.{spawn['boss']['level']}")
-            alerted.add(alert_key)
-        except Exception as e:
-            print(f"[Raid] Alert post failed: {e}")
+    now_unix = datetime.now(timezone.utc).timestamp()
 
-    # Only post report once the raid is fully finished (status completed/defeated/failed/ended)
-    if report_key not in reported and status in ("completed", "defeated", "failed", "ended"):
-        try:
-            raid, lb, guild_members = fetch_boss_raid(0)
-            if raid and str(raid["id"]) == spawn_id and raid.get("boss_defeated") is not None:
-                raid_wh = RAID_WEBHOOK_URL or LOGS_WEBHOOK_URL
-                requests.post(
-                    raid_wh,
-                    json={
-                        "username": "SleepingForest Raids",
-                        "embeds": [build_boss_embed(raid, lb, guild_members)],
-                        "allowed_mentions": {"parse": []},
-                    },
-                    timeout=15,
-                ).raise_for_status()
-                print(f"[Raid] Report posted for guild raid: {spawn['boss']['name']}")
-                reported.add(report_key)
-        except Exception as e:
-            print(f"[Raid] Report post failed: {e}")
+    if alert_key not in alerted and spawn_id not in _raid_alert_scheduled:
+        if alert_unix > now_unix:
+            # Alert time hasn't passed yet - schedule a task to fire at the exact second
+            _raid_alert_scheduled.add(spawn_id)
+            asyncio.ensure_future(_raid_alert_task(spawn_id, spawn, alert_unix, state))
+            print(f"[Raid] Scheduled exact alert task for raid {spawn_id} in {alert_unix - now_unix:.1f}s")
+        elif now_unix < spawn_dt.timestamp():
+            # We're past the 10-min mark but boss hasn't spawned yet - alert immediately
+            print(f"[Raid] Missed 10-min window for raid {spawn_id}, alerting now")
+            try:
+                _post_raid_alert(spawn)
+                alerted.add(alert_key)
+                state["alerted"] = list(alerted)[-200:]
+                raid_save_state(state)
+            except Exception as e:
+                print(f"[Raid] Late alert post failed: {e}")
 
-    state["alerted"] = list(alerted)[-200:]
-    state["reported"] = list(reported)[-200:]
-    raid_save_state(state)
-
-@tasks.loop(minutes=2)
-async def guild_raid_loop():
-    await asyncio.get_running_loop().run_in_executor(None, run_guild_raid_check)
+    if report_key not in reported and spawn_id not in _raid_report_scheduled:
+        _raid_report_scheduled.add(spawn_id)
+        asyncio.ensure_future(_raid_report_task(spawn_id, spawn_dt))
+        print(f"[Raid] Scheduled report task for raid {spawn_id}")
 
 # -- Log helper ------------------------------------------------------------------------------
 async def send_log(msg):
