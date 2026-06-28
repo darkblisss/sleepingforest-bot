@@ -1431,11 +1431,6 @@ async def on_member_update(before, after):
 async def on_ready():
     print(f"[Bot] Logged in as {bot.user} ({bot.user.id})")
     if not donations_loop.is_running():
-
-@bot.event
-async def on_ready():
-    print(f"[Bot] Logged in as {bot.user} ({bot.user.id})")
-    if not donations_loop.is_running():
         donations_loop.start()
     if not weekly_giveaway.is_running():
         weekly_giveaway.start()
