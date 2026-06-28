@@ -1407,6 +1407,32 @@ async def on_message(message):
         return
 
 @bot.event
+async def on_member_update(before, after):
+    member_role_id = int(MEMBERS_ROLE_ID)
+    had_role = any(role.id == member_role_id for role in before.roles)
+    has_role = any(role.id == member_role_id for role in after.roles)
+
+    if not had_role and has_role:
+        try:
+            welcome_msg = (
+                "Welcome to **SleepingForest**! It is great to have you with us.\n"
+                "We need you to link your in-game character so we know who you are and can ping you for guild events.\n\n"
+                "Just reply to this message with:\n"
+                "`!link YourIngameName`"
+            )
+            await after.send(welcome_msg)
+            print(f"[Welcome] Sent welcome DM to {after.name}")
+        except discord.Forbidden:
+            print(f"[Welcome] Could not send DM to {after.name} (DMs disabled)")
+        except Exception as e:
+            print(f"[Welcome] Error sending DM to {after.name}: {e}")
+
+@bot.event
+async def on_ready():
+    print(f"[Bot] Logged in as {bot.user} ({bot.user.id})")
+    if not donations_loop.is_running():
+
+@bot.event
 async def on_ready():
     print(f"[Bot] Logged in as {bot.user} ({bot.user.id})")
     if not donations_loop.is_running():
