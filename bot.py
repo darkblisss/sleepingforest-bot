@@ -108,14 +108,13 @@ def reload_token():
     new_token = data.get("token", "").strip()
     if not new_token or len(new_token) < 20:
         return {"error": "invalid token"}, 400
-    old_token = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
+    old_token = os.environ.get("DEGEN_SESSION_TOKEN", "").strip()
     if new_token == old_token:
         return {"status": "unchanged"}, 200
-    os.environ["DEGEN_REFRESH_TOKEN"] = new_token
-    expires_unix = int(time.time()) + 86400
-    os.environ["TOKEN_EXPIRES_UNIX"] = str(expires_unix)
-    _post_token_log(new_token, expires_in=86400)
-    print(f"[RELOAD] Token hot-reloaded via webhook: ...{new_token[-4:]}")
+    os.environ["DEGEN_SESSION_TOKEN"] = new_token
+    _save_env_to_render("DEGEN_SESSION_TOKEN", new_token)
+    _post_token_log(new_token, expires_in=604800)
+    print(f"[RELOAD] Session token hot-reloaded via webhook: ...{new_token[-4:]}")
     return {"status": "updated", "ending": new_token[-4:]}, 200
 
 def run_flask():
@@ -133,7 +132,7 @@ def send_error_alert(message):
             pass
 
 # -- Token helpers ---------------------------------------------------------------------------
-def _post_token_log(new_token, expires_in=86400):
+def _post_token_log(new_token, expires_in=604800):
     expires_unix = int(time.time()) + expires_in
     os.environ["TOKEN_EXPIRES_UNIX"] = str(expires_unix)
     _save_env_to_render("TOKEN_EXPIRES_UNIX", str(expires_unix))
@@ -143,9 +142,9 @@ def _post_token_log(new_token, expires_in=86400):
         requests.post(LOGS_WEBHOOK_URL, json={
             "username": "SleepingForest Log",
             "embeds": [{
-                "title": "Token Refreshed",
+                "title": "Session Token Updated",
                 "description": (
-                    f"The DegenIdle refresh token has been rotated successfully.\n"
+                    f"The DegenIdle session token has been updated successfully.\n"
                     f"**New token ending:** `...{new_token[-4:]}`\n\n"
                     f"Expires approximately: <t:{expires_unix}:R> (<t:{expires_unix}:f>)"
                 ),
@@ -189,62 +188,33 @@ def _save_token_to_github(new_token):
             key_data = r.json()
             pub_key = nacl_public.PublicKey(key_data["key"].encode(), encoding.Base64Encoder)
             encrypted = base64.b64encode(nacl_public.SealedBox(pub_key).encrypt(new_token.encode())).decode()
-            requests.put(f"https://api.github.com/repos/{repo}/actions/secrets/DEGEN_REFRESH_TOKEN", headers={"Authorization": f"Bearer {GH_PAT}"}, json={"encrypted_value": encrypted, "key_id": key_data["key_id"]}, timeout=10)
+            requests.put(f"https://api.github.com/repos/{repo}/actions/secrets/DEGEN_SESSION_TOKEN", headers={"Authorization": f"Bearer {GH_PAT}"}, json={"encrypted_value": encrypted, "key_id": key_data["key_id"]}, timeout=10)
             print(f"[TOKEN] GitHub secret updated: {repo}")
         except Exception as e:
             print(f"[TOKEN] GitHub update failed for {repo}: {e}")
 
 def get_access_token():
-    refresh_token = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
-    if not refresh_token:
-        raise RuntimeError("Missing DEGEN_REFRESH_TOKEN")
-    print(f"[TOKEN] Using refresh token ending in: ...{refresh_token[-4:]}")
-    try:
-        r = requests.post(
-            "https://auth.degenidle.com/oauth2/token",
-            data={"client_id": CLIENT_ID, "grant_type": "refresh_token", "refresh_token": refresh_token},
-            timeout=20
-        )
-        r.raise_for_status()
-    except Exception as e:
-        send_error_alert(f"TOKEN EXPIRED - run !settoken with a fresh token. Error: {e}")
-        raise
-    data = r.json()
-    new_refresh = data.get("refresh_token")
-    if new_refresh:
-        print(f"[TOKEN] New refresh token ending in: ...{new_refresh[-4:]}")
-        changed = new_refresh != refresh_token
-        print(f"[TOKEN] Token changed: {'YES - rotated successfully' if changed else 'NO - same token'}")
-        if changed:
-            os.environ["DEGEN_REFRESH_TOKEN"] = new_refresh
-            _save_env_to_render("DEGEN_REFRESH_TOKEN", new_refresh)
-            _save_token_to_github(new_refresh)
-            _post_token_log(new_refresh, expires_in=data.get("expires_in", 86400))
-    else:
-        send_error_alert("No new refresh_token returned - rotation will break within 24h")
-    return data["access_token"]
+    session_token = os.environ.get("DEGEN_SESSION_TOKEN", "").strip()
+    if not session_token:
+        send_error_alert("Missing DEGEN_SESSION_TOKEN - run !settoken with a fresh session token.")
+        raise RuntimeError("Missing DEGEN_SESSION_TOKEN")
+    return session_token
 
 def check_token_expiry():
-    stored_refresh = os.environ.get("DEGEN_REFRESH_TOKEN", "").strip()
-    if not stored_refresh:
-        return None, None, None, "No DEGEN_REFRESH_TOKEN set."
+    stored = os.environ.get("DEGEN_SESSION_TOKEN", "").strip()
+    if not stored:
+        return None, None, None, "No DEGEN_SESSION_TOKEN set."
     try:
-        r = requests.post(
-            "https://auth.degenidle.com/oauth2/token",
-            data={"client_id": CLIENT_ID, "grant_type": "refresh_token", "refresh_token": stored_refresh},
-            timeout=20
-        )
+        r = requests.get(RESOURCES_URL, headers=make_headers(stored), timeout=20)
         r.raise_for_status()
     except Exception as e:
-        return None, None, None, f"Token request failed: {e}"
-    data = r.json()
-    expires_in = data.get("expires_in", 0)
-    expires_unix = int(time.time()) + expires_in
-    returned_refresh = data.get("refresh_token", "")
-    rotated = bool(returned_refresh and returned_refresh != stored_refresh)
-    new_ending = f"...{returned_refresh[-4:]}" if returned_refresh else "(none returned)"
-    stored_ending = f"...{stored_refresh[-4:]}"
-    return expires_unix, rotated, (stored_ending, new_ending), None
+        return None, None, None, f"Session token rejected by API: {e}"
+    try:
+        expires_unix = int(os.environ.get("TOKEN_EXPIRES_UNIX", "0")) or None
+    except Exception:
+        expires_unix = None
+    ending = f"...{stored[-4:]}"
+    return expires_unix, False, (ending, ending), None
 
 def make_headers(access_token):
     return {
@@ -1376,10 +1346,10 @@ async def on_message(message):
         if not new_token or len(new_token) < 20:
             await message.channel.send("Invalid token.")
             return
-        os.environ["DEGEN_REFRESH_TOKEN"] = new_token
-        await asyncio.get_running_loop().run_in_executor(None, _save_env_to_render, "DEGEN_REFRESH_TOKEN", new_token)
+        os.environ["DEGEN_SESSION_TOKEN"] = new_token
+        await asyncio.get_running_loop().run_in_executor(None, _save_env_to_render, "DEGEN_SESSION_TOKEN", new_token)
         await asyncio.get_running_loop().run_in_executor(None, _save_token_to_github, new_token)
-        await asyncio.get_running_loop().run_in_executor(None, _post_token_log, new_token, 86400)
+        await asyncio.get_running_loop().run_in_executor(None, _post_token_log, new_token, 604800)
         await message.channel.send(f"Token updated. New ending: `...{new_token[-4:]}`")
         try:
             await message.delete()
@@ -1397,7 +1367,7 @@ async def on_message(message):
             "`!members` - (Officer+) List all linked members\n"
             "`!bossstats [offset]` - Post latest raid stats to logs channel\n"
             "`!checktoken` - (Admin) Check token status\n"
-            "`!settoken <token>` - (Admin) Set a new refresh token\n"
+            "`!settoken <token>` - (Admin) Set a new session token\n"
             "`!testraid` - (Officer+) Test raid alert\n"
             "`!testdonations` - (Officer+) Test donations reminder\n"
             "`!testgiveaway` - (Officer+) Test giveaway\n"
