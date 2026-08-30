@@ -1149,6 +1149,125 @@ def run_raid_precheck():
 async def raid_precheck_loop():
     await asyncio.get_running_loop().run_in_executor(None, run_raid_precheck)
 
+def run_weekly_recap():
+    """
+    Runs Monday 00:00 UTC alongside the giveaway. Summarizes the previous
+    7 days of raid attendance and donation participation.
+    """
+    print(f"\n-- Weekly Recap @ {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} --")
+    target_wh = ACTIVITY_WEBHOOK_URL or LOGS_WEBHOOK_URL
+    if not target_wh:
+        print("[WeeklyRecap] No webhook configured - skipping")
+        return
+    try:
+        token = get_access_token()
+        h = make_headers(token)
+        guild_data = requests.get(GUILD_API, headers=h, timeout=15).json()
+        members = guild_data.get("members") or []
+        id_to_name = {m["character_id"]: m["character_name"] for m in members if m.get("character_id") and m.get("character_name")}
+        all_ids = set(id_to_name.keys())
+        total_members = len(all_ids) or 1
+        daily_limit = get_daily_limit(h)
+
+        now = datetime.now(timezone.utc)
+        week_start = (now - timedelta(days=7)).date()
+        week_dates = [week_start + timedelta(days=i) for i in range(7)]
+
+        hist = requests.get(f"{BASE}/guild-worldboss/{DEGEN_GUILD_ID}/history?limit=10&offset=0", headers=h, timeout=15).json()
+        raids = hist.get("data", [])
+        raid_day_counts = {d: 0 for d in week_dates}
+        raided_ids = set()
+        for raid in raids:
+            sched = raid.get("scheduled_time", "")
+            try:
+                raid_date = datetime.fromisoformat(sched.replace(" ", "T").split("+")[0]).date()
+            except Exception:
+                continue
+            if raid_date not in raid_day_counts:
+                continue
+            try:
+                lb = requests.get(f"{BASE}/guild-worldboss/leaderboard/{raid['id']}?characterId={CHAR_ID}", headers=h, timeout=15).json()
+                entries = lb.get("data", [])
+            except Exception:
+                entries = []
+            participant_ids = {e.get("character_id") for e in entries if e.get("character_id")}
+            raid_day_counts[raid_date] = len(participant_ids)
+            raided_ids |= participant_ids
+
+        donation_day_counts = {d: 0 for d in week_dates}
+        donated_ids = set()
+        for d in week_dates:
+            try:
+                resp = requests.get(
+                    f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/daily?day={d.isoformat()}&characterId={CHAR_ID}",
+                    headers=h, timeout=15
+                ).json()
+                by_member = resp.get("byMember", [])
+            except Exception:
+                by_member = []
+            hit_ids = {m.get("character_id") for m in by_member if m.get("character_id") and m.get("count", 0) >= daily_limit}
+            donation_day_counts[d] = len(hit_ids)
+            donated_ids |= hit_ids
+
+        raid_total_slots = sum(raid_day_counts.values())
+        raid_weekly_pct = round((raid_total_slots / (total_members * 7)) * 100)
+        raid_avg_days = raid_total_slots / total_members
+
+        donation_total_slots = sum(donation_day_counts.values())
+        donation_weekly_pct = round((donation_total_slots / (total_members * 7)) * 100)
+        donation_avg_days = donation_total_slots / total_members
+
+        no_engagement_ids = all_ids - raided_ids - donated_ids
+        no_engagement_names = sorted(id_to_name.get(mid, "Unknown") for mid in no_engagement_ids)
+
+        raid_row = "  ".join(f"{d.strftime('%a')} {raid_day_counts[d]}" for d in week_dates)
+        donation_row = "  ".join(f"{d.strftime('%a')} {round((donation_day_counts[d] / total_members) * 100)}%" for d in week_dates)
+
+        week_range = f"{week_dates[0].strftime('%d %b')} - {week_dates[-1].strftime('%d %b')}"
+
+        no_engagement_block = (
+            f"**No raids or donations this week ({len(no_engagement_names)}):**\n" + ", ".join(no_engagement_names)
+            if no_engagement_names else
+            "**Everyone participated in at least one raid or donation this week!**"
+        )
+
+        description = (
+            f"**Raids**\n"
+            f"```\n{raid_row}\n```\n"
+            f"Weekly attendance: {raid_weekly_pct}%  |  Avg participation: {raid_avg_days:.1f}/7 days\n\n"
+            f"**Donations**\n"
+            f"```\n{donation_row}\n```\n"
+            f"Weekly donation: {donation_weekly_pct}%  |  Avg participation: {donation_avg_days:.1f}/7 days\n\n"
+            f"{no_engagement_block}"
+        )
+
+        requests.post(
+            target_wh,
+            json={
+                "username": "SleepingForest Recap",
+                "embeds": [{
+                    "title": "SleepingForest Weekly Recap",
+                    "description": description,
+                    "color": 0x958AEA,
+                    "footer": {"text": f"SleepingForest - DegenIdle - Week of {week_range}"},
+                    "timestamp": now.isoformat(),
+                }],
+                "allowed_mentions": {"parse": []},
+            },
+            timeout=15,
+        ).raise_for_status()
+        print("[WeeklyRecap] Posted successfully")
+    except Exception as e:
+        send_error_alert(f"Weekly recap failed: {e}")
+        print(f"[WeeklyRecap] Error: {e}")
+
+@tasks.loop(time=GIVEAWAY_TIME)
+async def weekly_recap_loop():
+    now = datetime.now(timezone.utc)
+    if now.weekday() != 0:
+        return
+    await asyncio.get_running_loop().run_in_executor(None, run_weekly_recap)
+
 @tasks.loop(minutes=2)
 async def guild_raid_loop():
     """
@@ -1381,6 +1500,14 @@ async def on_message(message):
             await message.channel.send(f"Test failed: {e}")
         return
 
+    if content.lower() == "!testweeklyrecap":
+        if not (is_owner or (acting_member and has_officer_role(acting_member))):
+            await message.channel.send("Officer+ only.")
+            return
+        await asyncio.get_running_loop().run_in_executor(None, run_weekly_recap)
+        await message.channel.send("Test weekly recap posted.")
+        return
+
     if content.lower() == "!testdonations":
         if not (is_owner or (acting_member and has_officer_role(acting_member))):
             await message.channel.send("Officer+ only.")
@@ -1458,6 +1585,7 @@ async def on_message(message):
             "`!testdonations` - (Officer+) Test donations reminder\n"
             "`!testgiveaway` - (Officer+) Test giveaway\n"
             "`!testactivity` - (Officer+) Test activity check\n"
+            "`!testweeklyrecap` - (Officer+) Test weekly recap\n"
         )
         await message.channel.send(help_text)
         return
@@ -1498,5 +1626,7 @@ async def on_ready():
         activity_check_loop.start()
     if not raid_precheck_loop.is_running():
         raid_precheck_loop.start()
+    if not weekly_recap_loop.is_running():
+        weekly_recap_loop.start()
 
 bot.run(BOT_TOKEN)
