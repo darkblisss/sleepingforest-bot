@@ -67,6 +67,7 @@ WB_ROLE_ID            = os.environ.get("WORLD_BOSS_ROLE_ID", "").strip()
 RELOAD_TOKEN_SECRET   = os.environ.get("RELOAD_TOKEN_SECRET", "").strip()
 RAID_WEBHOOK_URL      = os.environ.get("RAID_WEBHOOK_URL", "").strip()
 RAID_ROLE_ID          = os.environ.get("RAID_ROLE_ID", "").strip()
+WARROOM_WEBHOOK_URL   = os.environ.get("WARROOM_WEBHOOK_URL", "").strip()
 
 DAILY_DONATIONS_URL  = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/daily?day=today&characterId={CHAR_ID}"
 WEEKLY_DONATIONS_URL = f"{BASE}/guilds/{DEGEN_GUILD_ID}/donations/leaderboard?period=weekly&characterId={CHAR_ID}"
@@ -81,6 +82,7 @@ DONATIONS_TIME = dtime(hour=18, minute=0, tzinfo=timezone.utc)
 ACTIVITY_TIMES = [
     dtime(hour=0, minute=0, tzinfo=timezone.utc),
 ]
+RAID_PRECHECK_TIME = dtime(hour=12, minute=15, tzinfo=timezone.utc)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -1103,6 +1105,50 @@ def run_guild_raid_poll():
         return None
     return data.get("data", {}).get("active_spawn")
 
+def run_raid_precheck():
+    """
+    Runs ~2 hours before the usual raid time (12:15 UTC, raid usually ~14:15 UTC).
+    If no guild raid has been initiated yet (no active_spawn), pings officers in
+    the warroom channel to initiate or prepare to initiate.
+    """
+    if not WARROOM_WEBHOOK_URL:
+        print("[RaidPrecheck] No WARROOM_WEBHOOK_URL set - skipping")
+        return
+    spawn = run_guild_raid_poll()
+    if spawn:
+        print(f"[RaidPrecheck] Raid already queued ({spawn.get('id')}) - skipping ping")
+        return
+    content = f"<@&{OFFICER_ROLE_ID}>" if OFFICER_ROLE_ID else ""
+    embed = {
+        "title": "Raid Not Queued",
+        "description": (
+            "No raid has been initiated yet.\n"
+            "Raids usually start around **14:15 UTC**.\n\n"
+            "Please initiate or prepare to initiate the raid."
+        ),
+        "color": 0xF39C12,
+        "footer": {"text": "SleepingForest - Raids"},
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        requests.post(
+            WARROOM_WEBHOOK_URL,
+            json={
+                "username": "SleepingForest Raids",
+                "content": content,
+                "embeds": [embed],
+                "allowed_mentions": {"roles": [OFFICER_ROLE_ID]} if OFFICER_ROLE_ID else {"parse": []},
+            },
+            timeout=15,
+        ).raise_for_status()
+        print("[RaidPrecheck] Warroom ping sent")
+    except Exception as e:
+        print(f"[RaidPrecheck] Failed to post: {e}")
+
+@tasks.loop(time=RAID_PRECHECK_TIME)
+async def raid_precheck_loop():
+    await asyncio.get_running_loop().run_in_executor(None, run_raid_precheck)
+
 @tasks.loop(minutes=2)
 async def guild_raid_loop():
     """
@@ -1295,6 +1341,46 @@ async def on_message(message):
             await message.channel.send(f"Test failed: {e}")
         return
 
+    if content.lower() == "!testraidprecheck":
+        if not (is_owner or (acting_member and has_officer_role(acting_member))):
+            await message.channel.send("Officer+ only.")
+            return
+        target_wh = LOGS_WEBHOOK_URL
+        if not target_wh:
+            await message.channel.send("No logs webhook configured.")
+            return
+        try:
+            spawn = await asyncio.get_running_loop().run_in_executor(None, run_guild_raid_poll)
+            if spawn:
+                await message.channel.send(f"A raid is already queued (id: {spawn.get('id')}) - precheck would skip the ping.")
+                return
+            content_ping = f"<@&{OFFICER_ROLE_ID}>" if OFFICER_ROLE_ID else ""
+            embed = {
+                "title": "Raid Not Queued - TEST",
+                "description": (
+                    "No raid has been initiated yet.\n"
+                    "Raids usually start around **14:15 UTC**.\n\n"
+                    "Please initiate or prepare to initiate the raid."
+                ),
+                "color": 0xF39C12,
+                "footer": {"text": "SleepingForest - Raids"},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            requests.post(
+                target_wh,
+                json={
+                    "username": "SleepingForest Raids",
+                    "content": content_ping,
+                    "embeds": [embed],
+                    "allowed_mentions": {"parse": []},
+                },
+                timeout=15,
+            ).raise_for_status()
+            await message.channel.send("Test raid precheck posted to logs.")
+        except Exception as e:
+            await message.channel.send(f"Test failed: {e}")
+        return
+
     if content.lower() == "!testdonations":
         if not (is_owner or (acting_member and has_officer_role(acting_member))):
             await message.channel.send("Officer+ only.")
@@ -1410,5 +1496,7 @@ async def on_ready():
         guild_raid_loop.start()
     if not activity_check_loop.is_running():
         activity_check_loop.start()
+    if not raid_precheck_loop.is_running():
+        raid_precheck_loop.start()
 
 bot.run(BOT_TOKEN)
