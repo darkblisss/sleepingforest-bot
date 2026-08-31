@@ -264,6 +264,8 @@ def push_members_to_github():
 
 def push_snapshots_to_github(snapshots):
     if not GH_PAT:
+        send_error_alert("push_snapshots_to_github skipped - GH_PAT is not set.")
+        print("[GitHub] Skipped: GH_PAT not set")
         return
     try:
         encoded = base64.b64encode(json.dumps(snapshots, indent=2).encode()).decode()
@@ -273,9 +275,14 @@ def push_snapshots_to_github(snapshots):
         payload = {"message": "chore: auto-update snapshots.json [skip ci]", "content": encoded}
         if sha:
             payload["sha"] = sha
-        requests.put("https://api.github.com/repos/darkblisss/sleepingforest-bot/contents/snapshots.json", headers=headers, json=payload, timeout=10)
+        put_r = requests.put("https://api.github.com/repos/darkblisss/sleepingforest-bot/contents/snapshots.json", headers=headers, json=payload, timeout=10)
+        if put_r.status_code not in (200, 201):
+            send_error_alert(f"snapshots.json push failed: {put_r.status_code} {put_r.text[:200]}")
+            print(f"[GitHub] Push failed: {put_r.status_code} {put_r.text[:200]}")
+            return
         print("[GitHub] snapshots.json pushed")
     except Exception as e:
+        send_error_alert(f"snapshots.json push error: {e}")
         print(f"[GitHub] snapshots push error: {e}")
 
 def has_admin_role(member):
