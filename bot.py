@@ -1584,24 +1584,44 @@ async def on_message(message):
             pass
         return
 
-    if content.lower() == "!help":
-        help_text = (
-            "**SleepingForest Bot Commands**\n\n"
-            "`!link <ingame_name>` - Link your Discord to your in-game character\n"
-            "`!link @user <ingame_name>` - (Officer+) Link another member\n"
-            "`!unlink` - Unlink your own account\n"
-            "`!unlink <ingame_name>` - (Officer+) Force-unlink a member\n"
-            "`!members` - (Officer+) List all linked members\n"
-            "`!bossstats [offset]` - Post latest raid stats to logs channel\n"
-            "`!checktoken` - (Admin) Check token status\n"
-            "`!settoken <token>` - (Admin) Set a new session token\n"
-            "`!testraid` - (Officer+) Test raid alert\n"
-            "`!testdonations` - (Officer+) Test donations reminder\n"
-            "`!testgiveaway` - (Officer+) Test giveaway\n"
-            "`!testactivity` - (Officer+) Test activity check\n"
-            "`!testweeklyrecap` - (Officer+) Test weekly recap\n"
-        )
-        await message.channel.send(help_text)
+    if content.lower() == "!botcommands":
+        is_admin_here = is_owner or (acting_member and has_admin_role(acting_member))
+        is_officer_here = is_admin_here or (acting_member and has_officer_role(acting_member))
+
+        lines = [
+            "**SleepingForest Bot Commands**",
+            "",
+            "**Everyone**",
+            "`!link <ingame_name>` - Link your Discord to your in-game character",
+            "`!unlink` - Unlink your own account",
+            "`!bossstats [offset]` - Post latest raid stats to logs channel",
+            "`!botcommands` - Show this list",
+        ]
+
+        if is_officer_here:
+            lines += [
+                "",
+                "**Officer+**",
+                "`!link @user <ingame_name>` - Link another member",
+                "`!unlink <ingame_name>` - Force-unlink a member",
+                "`!members` - List all linked members",
+                "`!testraid` - Test raid alert",
+                "`!testraidprecheck` - Test raid precheck ping",
+                "`!testdonations` - Test donations reminder",
+                "`!testgiveaway` - Test giveaway",
+                "`!testactivity` - Test activity check",
+                "`!testweeklyrecap` - Test weekly recap",
+            ]
+
+        if is_admin_here:
+            lines += [
+                "",
+                "**Admin**",
+                "`!checktoken` - Check token status",
+                "`!settoken <token>` - Set a new session token",
+            ]
+
+        await message.channel.send("\n".join(lines))
         return
 
 @bot.event
@@ -1624,6 +1644,13 @@ async def on_member_update(before, after):
             print(f"[Welcome] Could not send DM to {after.name} (DMs disabled)")
         except Exception as e:
             print(f"[Welcome] Error sending DM to {after.name}: {e}")
+
+    if had_role and not has_role:
+        try:
+            result = await asyncio.get_running_loop().run_in_executor(None, do_self_unlink, str(after.id))
+            print(f"[Welcome] Auto-unlinked {after.name} after losing Members role: {result}")
+        except Exception as e:
+            print(f"[Welcome] Error auto-unlinking {after.name}: {e}")
 
 @bot.event
 async def on_ready():
